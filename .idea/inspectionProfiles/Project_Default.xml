@@ -1,0 +1,18 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyShadowingBuiltinsInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
+      <option name="ignoredNames">
+        <list>
+          <option value="float" />
+          <option value="int" />
+          <option value="complex" />
+          <option value="list" />
+          <option value="tuple" />
+          <option value="bytes" />
+          <option value="bytearray" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
