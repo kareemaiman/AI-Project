@@ -1,321 +1,45 @@
 import pygame
-import networkx as nx
+import pygame_gui
 import math
 import random
-import time
-from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional
 
-# =============================================================================
-# 1. CONFIGURATION & CONSTANTS
-# =============================================================================
-# Initial Defaults
-INITIAL_SCREEN_WIDTH = 1200
-INITIAL_SCREEN_HEIGHT = 800
+from config import *
+from models import RailwayGraph, ScheduleEvent, TrainAgent, RouteConfig
+from scheduler import Scheduler
 
-# Color Palette for UI and Elements
-COLORS = {
-    "bg": (30, 30, 35),  # Dark background for the map
-    "node": (100, 200, 255),  # Stations
-    "node_selected": (255, 215, 0),  # Highlighted station
-    "edge": (60, 60, 60),  # Tracks
-    "text": (230, 230, 230),  # Standard text
-    "panel": (45, 45, 50),  # Right-hand side UI panel
-    "input_bg": (25, 25, 30),  # Input fields
-    "btn_active": (70, 160, 100),  # Green buttons
-    "btn_inactive": (180, 60, 60),  # Red/Pause buttons
-    "btn_neutral": (80, 80, 100),  # Standard buttons
-    "tab_active": (100, 100, 120),  # Active tab header
-    "tab_inactive": (50, 50, 60),  # Inactive tab header
-    "timeline_bar": (100, 200, 150)  # Gantt chart bars
-}
-
-FONT_SIZE = 18
-HEADER_FONT_SIZE = 24
-
-
-# =============================================================================
-# 2. DATA STRUCTURES
-# =============================================================================
-
-@dataclass
-class TrainRequest:
-    """DTO representing a request for a train journey."""
-    train_id: int
-    start_node: str
-    end_node: str
-    color: Tuple[int, int, int]
-
-
-@dataclass
-class ScheduleEvent:
-    """Represents a specific reservation on a track segment."""
-    train_id: int
-    source: str
-    target: str
-    start_time: int
-    end_time: int
-
-
-@dataclass
-class TrainAgent:
-    """Holds the runtime state of a single train."""
-    id: int
-    pos: str
-    color: Tuple[int, int, int]
-    busy_until: int
-    total_wait: int = 0
-    trips_completed: int = 0
-
-
-# =============================================================================
-# 3. GRAPH MODEL
-# =============================================================================
-
-class RailwayGraph:
-    """Wrapper around NetworkX to manage the physical topology."""
-
-    def __init__(self):
-        self.graph = nx.Graph()
-
-    def add_station(self, name: str, x: int, y: int):
-        self.graph.add_node(name, pos=(x, y))
-
-    def add_track(self, u: str, v: str):
-        pos = nx.get_node_attributes(self.graph, 'pos')
-        if u in pos and v in pos:
-            x1, y1 = pos[u]
-            x2, y2 = pos[v]
-            dist = math.hypot(x2 - x1, y2 - y1)
-            weight = max(1, int(dist / 5.0))
-            self.graph.add_edge(u, v, weight=weight)
-
-    def get_path(self, start: str, end: str) -> List[str]:
-        try:
-            return nx.shortest_path(self.graph, source=start, target=end, weight='weight')
-        except nx.NetworkXNoPath:
-            return []
-
-    def get_all_edges(self):
-        return list(self.graph.edges())
-
-
-# =============================================================================
-# 4. SCHEDULER (The AI Core)
-# =============================================================================
-
-class Scheduler:
-    """Handles logic for pathfinding and conflict resolution."""
-
-    def __init__(self, graph_model: RailwayGraph):
-        self.graph_model = graph_model
-        self.reservations: Dict[Tuple[str, str], List[Tuple[float, float]]] = {}
-        self.track_utilization: Dict[Tuple[str, str], int] = {}
-
-    def reset(self):
-        self.reservations.clear()
-        self.track_utilization.clear()
-
-    def cleanup_old_reservations(self, current_time: int):
-        for key in list(self.reservations.keys()):
-            self.reservations[key] = [r for r in self.reservations[key] if r[1] > current_time]
-            if not self.reservations[key]:
-                del self.reservations[key]
-
-    def _check_conflict(self, u: str, v: str, start: float, end: float, margin: float = 20.0) -> bool:
-        edge_key = tuple(sorted((u, v)))
-        if edge_key not in self.reservations:
-            return False
-
-        for r_start, r_end in self.reservations[edge_key]:
-            if max(start, r_start) < min(end, r_end + margin):
-                return True
-        return False
-
-    def _reserve(self, u: str, v: str, start: float, end: float):
-        edge_key = tuple(sorted((u, v)))
-        if edge_key not in self.reservations:
-            self.reservations[edge_key] = []
-            self.track_utilization[edge_key] = 0
-
-        self.reservations[edge_key].append((start, end))
-        self.track_utilization[edge_key] += 1
-
-    def schedule_request(self, req: TrainRequest, current_time: int, mode="GREEDY") -> Tuple[
-        List[ScheduleEvent], int, float]:
-        t0 = time.perf_counter()
-        path = self.graph_model.get_path(req.start_node, req.end_node)
-        if not path: return ([], 0, 0.0)
-
-        new_events = []
-        conflicts_avoided = 0
-
-        if mode == "GREEDY":
-            curr_t = current_time
-            for i in range(len(path) - 1):
-                u, v = path[i], path[i + 1]
-                weight = self.graph_model.graph.edges[u, v]['weight']
-                new_events.append(ScheduleEvent(req.train_id, u, v, curr_t, curr_t + weight))
-                self._reserve(u, v, curr_t, curr_t + weight)
-                curr_t += weight
-
-        elif mode == "CSP":
-            start_delay = 0
-            found = False
-            while start_delay < 5000:
-                temp_events = []
-                curr_t = current_time + start_delay
-                valid_path = True
-
-                for i in range(len(path) - 1):
-                    u, v = path[i], path[i + 1]
-                    weight = self.graph_model.graph.edges[u, v]['weight']
-                    end_t = curr_t + weight
-
-                    if self._check_conflict(u, v, curr_t, end_t):
-                        valid_path = False
-                        break
-
-                    temp_events.append(ScheduleEvent(req.train_id, u, v, curr_t, end_t))
-                    curr_t += weight
-
-                if valid_path:
-                    for evt in temp_events:
-                        self._reserve(evt.source, evt.target, evt.start_time, evt.end_time)
-                        new_events.append(evt)
-                    found = True
-                    break
-
-                conflicts_avoided += 1
-                start_delay += 10
-
-            if not found:
-                print(f"Train {req.train_id} dropped: Network saturated.")
-
-        dt = (time.perf_counter() - t0) * 1000
-        return (new_events, conflicts_avoided, dt)
-
-
-# =============================================================================
-# 5. UI COMPONENTS
-# =============================================================================
-
-class InputBox:
-    def __init__(self, x, y, w, h, text=''):
-        self.rect = pygame.Rect(x, y, w, h)
-        self.color = COLORS["input_bg"]
-        self.text = text
-        self.txt_surface = pygame.font.Font(None, 28).render(text, True, COLORS["text"])
-        self.active = False
-
-    def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            self.active = self.rect.collidepoint(event.pos)
-            self.color = COLORS["node"] if self.active else COLORS["input_bg"]
-        if event.type == pygame.KEYDOWN and self.active:
-            if event.key == pygame.K_RETURN:
-                return self.text
-            elif event.key == pygame.K_BACKSPACE:
-                self.text = self.text[:-1]
-            else:
-                self.text += event.unicode
-            self.txt_surface = pygame.font.Font(None, 28).render(self.text, True, COLORS["text"])
-
-    def draw(self, screen):
-        pygame.draw.rect(screen, self.color, self.rect)
-        pygame.draw.rect(screen, (100, 100, 100), self.rect, 1)
-        screen.blit(self.txt_surface, (self.rect.x + 5, self.rect.y + 8))
-
-
-class Button:
-    def __init__(self, x, y, w, h, text, color=COLORS["btn_neutral"], callback=None):
-        self.rect = pygame.Rect(x, y, w, h)
-        self.text = text
-        self.color = color
-        self.callback = callback
-        self.font = pygame.font.SysFont("Arial", 16, bold=True)
-
-    def draw(self, screen):
-        pygame.draw.rect(screen, self.color, self.rect, border_radius=5)
-        txt = self.font.render(self.text, True, (255, 255, 255))
-        screen.blit(txt, (self.rect.centerx - txt.get_width() // 2, self.rect.centery - txt.get_height() // 2))
-
-    def check_click(self, pos):
-        if self.rect.collidepoint(pos) and self.callback:
-            self.callback()
-
-
-class Slider:
-    def __init__(self, x, y, w, h, min_val, max_val, initial_val):
-        self.rect = pygame.Rect(x, y, w, h)
-        self.min_val = min_val
-        self.max_val = max_val
-        self.val = initial_val
-        self.dragging = False
-
-        # Calculate initial handle position
-        pct = (self.val - self.min_val) / (self.max_val - self.min_val)
-        self.handle_x = x + (w * pct)
-        self.handle_rect = pygame.Rect(self.handle_x - 10, y - 5, 20, h + 10)
-
-    def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.handle_rect.collidepoint(event.pos):
-                self.dragging = True
-            elif self.rect.collidepoint(event.pos):
-                self.dragging = True
-                self.update_val_from_pos(event.pos[0])
-        elif event.type == pygame.MOUSEBUTTONUP:
-            self.dragging = False
-        elif event.type == pygame.MOUSEMOTION and self.dragging:
-            self.update_val_from_pos(event.pos[0])
-
-    def update_val_from_pos(self, x):
-        x = max(self.rect.left, min(x, self.rect.right))
-        self.handle_x = x
-        self.handle_rect.x = x - 10
-        pct = (x - self.rect.left) / self.rect.width
-        self.val = self.min_val + pct * (self.max_val - self.min_val)
-
-    def draw(self, screen):
-        # Draw line
-        pygame.draw.rect(screen, (150, 150, 150), self.rect, border_radius=2)
-        # Draw filled part
-        fill_rect = pygame.Rect(self.rect.x, self.rect.y, self.handle_x - self.rect.x, self.rect.height)
-        pygame.draw.rect(screen, COLORS["btn_active"], fill_rect, border_radius=2)
-        # Draw Handle
-        pygame.draw.rect(screen, (200, 200, 200), self.handle_rect, border_radius=5)
-
-
-# =============================================================================
-# 6. MAIN APPLICATION
-# =============================================================================
 
 class App:
     def __init__(self):
         pygame.init()
-        # Enable Resizable Window
         self.screen = pygame.display.set_mode((INITIAL_SCREEN_WIDTH, INITIAL_SCREEN_HEIGHT), pygame.RESIZABLE)
         self.width, self.height = INITIAL_SCREEN_WIDTH, INITIAL_SCREEN_HEIGHT
 
-        pygame.display.set_caption("Smart Rail: Network Packet Simulation")
+        pygame.display.set_caption("Smart Rail: Egyptian Railway Simulator")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("Arial", FONT_SIZE)
         self.header_font = pygame.font.SysFont("Arial", HEADER_FONT_SIZE, bold=True)
+        self.status_font = pygame.font.SysFont("Consolas", 14)
+
+        # UI Manager
+        self.ui_manager = pygame_gui.UIManager((self.width, self.height))
 
         # Systems
         self.graph = RailwayGraph()
         self.scheduler = Scheduler(self.graph)
 
         # State Variables
-        self.active_events: List[ScheduleEvent] = []
         self.train_agents: Dict[int, TrainAgent] = {}
+        self.train_route_configs: Dict[int, RouteConfig] = {}
+        self.planned_events: List[ScheduleEvent] = []  # Persistent store for Gantt Chart
+
         self.mode = "EDITOR"
         self.algorithm_mode = "CSP"
         self.sim_time = 0
         self.paused = False
         self.sim_speed = 1.0
         self.speed_accumulator = 0.0
+
         self.selected_node_for_link = None
         self.active_tab = "CONFIG"
 
@@ -326,509 +50,855 @@ class App:
         self.is_dragging_map = False
         self.last_mouse_pos = (0, 0)
 
-        # Metrics Accumulators
+        # Gantt Chart Cache
+        self.table_surface: Optional[pygame.Surface] = None
+        self.table_dirty = True
+        self.table_scroll_y = 0
+
+        # Edit Interaction
+        self.train_list_rects: List[Tuple[pygame.Rect, int]] = []
+        self.selected_train = None
+
+        # Metrics
         self.total_collisions_avoided = 0
         self.total_scheduling_time = 0.0
         self.scheduling_ops = 0
 
-        # UI Initialization
         self.init_ui()
-        self.load_scenario_1()
+        self.load_scenario_egypt()
 
     def init_ui(self):
-        """Setup all buttons and input fields based on current window dimensions."""
+        """Setup all buttons and input fields using pygame_gui."""
+        self.ui_manager.clear_and_reset()
+        self.ui_manager.set_window_resolution((self.width, self.height))
+
         panel_x = self.width - 350
         panel_w = 350
+        tab_w = 87
 
-        # Inputs
-        self.input_name = InputBox(panel_x + 50, 130, 200, 32, "StationX")
-        self.input_x = InputBox(panel_x + 50, 200, 90, 32, "400")
-        self.input_y = InputBox(panel_x + 160, 200, 90, 32, "300")
-        self.input_trains = InputBox(panel_x + 170, 340, 80, 32, "5")
+        # --- TAB BUTTONS ---
+        self.btn_tab_config = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((panel_x, 0), (tab_w, 40)),
+                                                           text='CONFIG', manager=self.ui_manager)
+        self.btn_tab_schedules = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((panel_x + tab_w, 0), (tab_w, 40)), text='SCHED', manager=self.ui_manager)
+        self.btn_tab_status = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((panel_x + tab_w * 2, 0), (tab_w, 40)), text='STATS', manager=self.ui_manager)
+        self.btn_tab_table = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((panel_x + tab_w * 3, 0), (tab_w, 40)), text='TABLE', manager=self.ui_manager)
 
-        # Tabs
-        self.tab_config = pygame.Rect(panel_x, 0, 116, 40)
-        self.tab_status = pygame.Rect(panel_x + 116, 0, 116, 40)
-        self.tab_timeline = pygame.Rect(panel_x + 232, 0, 118, 40)
+        # --- CONFIG TAB ---
+        self.input_name = pygame_gui.elements.UITextEntryLine(
+            relative_rect=pygame.Rect((panel_x + 10, 130), (200, 32)), manager=self.ui_manager)
+        self.input_name.set_text("StationX")
+        self.input_x = pygame_gui.elements.UITextEntryLine(relative_rect=pygame.Rect((panel_x + 10, 200), (90, 32)),
+                                                           manager=self.ui_manager)
+        self.input_x.set_text("400")
+        self.input_y = pygame_gui.elements.UITextEntryLine(relative_rect=pygame.Rect((panel_x + 120, 200), (90, 32)),
+                                                           manager=self.ui_manager)
+        self.input_y.set_text("300")
 
-        # Buttons
-        self.btn_run = Button(panel_x + 50, 680, 200, 50, "START SIMULATION", COLORS["btn_active"], self.toggle_run)
-        self.btn_scenario = Button(panel_x + 50, 620, 200, 40, "LOAD SCENARIO: HUB", COLORS["btn_neutral"],
-                                   self.cycle_scenario)
+        self.btn_algo = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((panel_x + 10, 400), (200, 40)),
+                                                     text=f"ALGO: {self.algorithm_mode}", manager=self.ui_manager)
+        self.slider_speed = pygame_gui.elements.UIHorizontalSlider(
+            relative_rect=pygame.Rect((panel_x + 10, 500), (200, 20)), start_value=1.0, value_range=(0.1, 10.0),
+            manager=self.ui_manager)
+        self.btn_scenario = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((panel_x + 10, 550), (200, 40)),
+                                                         text="SCENARIO: EGYPT", manager=self.ui_manager)
+        self.btn_run = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((panel_x + 10, 600), (200, 50)),
+                                                    text="START SIMULATION", manager=self.ui_manager)
 
-        # Slider for Speed (0.1x to 10.0x)
-        self.slider_speed = Slider(panel_x + 50, 560, 200, 10, 0.1, 10.0, self.sim_speed)
+        # --- SCHEDULES TAB ---
+        self.input_tid = pygame_gui.elements.UITextEntryLine(relative_rect=pygame.Rect((panel_x + 20, 110), (60, 32)),
+                                                             manager=self.ui_manager)
+        self.input_tid.set_text("101")
+        self.input_tcolor = pygame_gui.elements.UITextEntryLine(
+            relative_rect=pygame.Rect((panel_x + 90, 110), (120, 32)), manager=self.ui_manager)
+        self.input_tcolor.set_text("255 50 50")
+        self.input_tstart = pygame_gui.elements.UITextEntryLine(
+            relative_rect=pygame.Rect((panel_x + 220, 110), (80, 32)), manager=self.ui_manager)
+        self.input_tstart.set_text("0")
 
-        # Map Controls (Overlay)
-        self.btn_zoom_in = Button(20, self.height - 60, 40, 40, "+", COLORS["btn_neutral"], self.zoom_in)
-        self.btn_zoom_out = Button(70, self.height - 60, 40, 40, "-", COLORS["btn_neutral"], self.zoom_out)
+        # Color Quick Selectors
+        colors = [(255, 50, 50), (50, 255, 50), (50, 50, 255), (255, 255, 50), (50, 255, 255), (255, 50, 255)]
+        self.btn_colors = []
+        for i, col in enumerate(colors):
+            btn = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((panel_x + 90 + (i * 20), 145), (20, 20)),
+                                               text="", manager=self.ui_manager)
+            btn.colours['normal_bg'] = pygame.Color(col)
+            btn.colours['hovered_bg'] = pygame.Color(col)
+            btn.colours['active_bg'] = pygame.Color(col)
+            btn.rebuild()
+            self.btn_colors.append((btn, col))
+
+        # Stops Dropdown - Correct Initialization to prevent Crash
+        self.drop_stops = pygame_gui.elements.UIDropDownMenu(
+            options_list=["Select Station"],
+            starting_option="Select Station",
+            relative_rect=pygame.Rect((panel_x + 20, 250), (300, 30)),
+            manager=self.ui_manager
+        )
+        # Immediately hide it to prevent it appearing on other tabs on startup
+        self.drop_stops.hide()
+
+        self.input_troute = pygame_gui.elements.UITextEntryLine(
+            relative_rect=pygame.Rect((panel_x + 20, 280), (300, 32)), manager=self.ui_manager)
+        self.input_troute.set_text("Cairo Alexandria")
+
+        self.btn_add_train = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((panel_x + 50, 320), (250, 40)),
+                                                          text="ADD / UPDATE TRAIN", manager=self.ui_manager)
+        self.btn_current_trains = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((panel_x + 50, 365), (250, 30)),
+                                                             text="CLEAR", manager=self.ui_manager)
+        self.btn_clear_trains = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((panel_x + 50, 400), (250, 30)),
+                                                             text="CLEAR ALL", manager=self.ui_manager)
+
+        # --- MAP CONTROLS ---
+        self.btn_zoom_in = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((20, self.height - 60), (40, 40)),
+                                                        text="+", manager=self.ui_manager)
+        self.btn_zoom_out = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((70, self.height - 60), (40, 40)),
+                                                         text="-", manager=self.ui_manager)
+
+        self.update_ui_visibility()
+
+    def update_ui_visibility(self):
+        """Helper to show/hide elements based on active tab."""
+        # Config Tab
+        is_cfg = (self.active_tab == "CONFIG")
+        self.input_name.visible = is_cfg
+        self.input_x.visible = is_cfg
+        self.input_y.visible = is_cfg
+        self.btn_algo.visible = is_cfg
+        if is_cfg:
+            self.slider_speed.show()
+        else:
+            self.slider_speed.hide()
+        self.btn_scenario.visible = is_cfg
+        self.btn_run.visible = is_cfg
+
+        # Schedules Tab
+        is_sched = (self.active_tab == "SCHEDULES")
+        self.input_tid.visible = is_sched
+        self.input_tcolor.visible = is_sched
+        self.input_tstart.visible = is_sched
+        self.input_troute.visible = is_sched
+        self.btn_add_train.visible = is_sched
+        self.btn_current_trains.visible = is_sched
+        self.btn_clear_trains.visible = is_sched
+
+        # Explicitly show/hide the dropdown to fix "appears on every tab" bug
+        if is_sched:
+            self.drop_stops.show()
+        else:
+            self.drop_stops.hide()
+
+        for btn, _ in self.btn_colors:
+            btn.visible = is_sched
+            if is_sched:
+                btn.show()
+            else:
+                btn.hide()
+
+    def update_stops_dropdown(self):
+        """Recreates the dropdown list to avoid internal state errors in pygame_gui."""
+        # Use existing position
+        rect = self.drop_stops.relative_rect
+
+        # Kill old
+        self.drop_stops.kill()
+
+        # Create new with updated nodes
+        nodes = ["Select Station"] + sorted(list(self.graph.graph.nodes()))
+        self.drop_stops = pygame_gui.elements.UIDropDownMenu(
+            options_list=nodes,
+            starting_option="Select Station",
+            relative_rect=rect,
+            manager=self.ui_manager
+        )
+
+        # Consolidate visibility logic via update_ui_visibility
+        self.update_ui_visibility()
 
     # --- COORDINATE TRANSFORMS ---
     def to_screen(self, x, y):
-        """Converts World Coords -> Screen Coords"""
         return int(x * self.zoom + self.cam_offset_x), int(y * self.zoom + self.cam_offset_y)
 
     def to_world(self, sx, sy):
-        """Converts Screen Coords -> World Coords"""
         return (sx - self.cam_offset_x) / self.zoom, (sy - self.cam_offset_y) / self.zoom
 
-    # --- CAMERA ACTIONS ---
-    def zoom_in(self):
-        self.zoom *= 1.1
-
-    def zoom_out(self):
-        self.zoom /= 1.1
-
     # --- SCENARIOS ---
-    def load_scenario_1(self):
-        self.graph = RailwayGraph()
-        self.graph.add_station("Central", 600, 400)
-        self.graph.add_station("North", 600, 100)
-        self.graph.add_station("East", 800, 400)
-        self.graph.add_station("South", 600, 700)
-        self.graph.add_station("West", 400, 400)
+    def _generate_default_trains(self, count=7):
+        self.train_route_configs.clear()
+        nodes = list(self.graph.graph.nodes())
+        if not nodes: return
 
-        self.graph.add_track("Central", "North")
-        self.graph.add_track("Central", "East")
-        self.graph.add_track("Central", "South")
-        self.graph.add_track("Central", "West")
-        self.graph.add_track("North", "East")
-        self.graph.add_track("East", "South")
-        self.graph.add_track("South", "West")
-        self.graph.add_track("West", "North")
-        self.scheduler = Scheduler(self.graph)
-        print("Scenario 1 Loaded")
+        for i in range(1, count + 1):
+            route_len = random.randint(3, 6)
+            route = [random.choice(nodes)]
+            for _ in range(route_len - 1):
+                next_node = random.choice(nodes)
+                # Ensure we don't pick the same node twice in a row
+                while next_node == route[-1] and len(nodes) > 1:
+                    next_node = random.choice(nodes)
+                route.append(next_node)
 
-    def load_scenario_2(self):
+            # Simple circular color generation
+            color = ((i * 50) % 255, (i * 80 + 100) % 255, (i * 120 + 50) % 255)
+            self.train_route_configs[i] = RouteConfig(train_id=i, stops=route, color=color, start_delay=(i - 1) * 30)
+        self.table_dirty = True
+
+    def load_scenario_egypt(self):
         self.graph = RailwayGraph()
         nodes = [
-            ("Hub", 600, 400), ("A1", 400, 200), ("A2", 300, 100),
-            ("B1", 800, 200), ("B2", 900, 100), ("C1", 800, 600),
-            ("C2", 900, 700), ("D1", 400, 600), ("D2", 300, 700)
+            ("Alexandria", 450, 100), ("Port Said", 650, 100),
+            ("Tanta", 520, 180), ("Ismailia", 650, 200),
+            ("Cairo", 550, 250), ("Suez", 680, 250),
+            ("Beni Suef", 550, 350), ("Minya", 550, 450),
+            ("Asyut", 580, 520), ("Sohag", 600, 580),
+            ("Qena", 620, 630), ("Luxor", 620, 680),
+            ("Aswan", 620, 780), ("Hurghada", 750, 500),
+            ("Safaga", 750, 550)
+        ]
+        for n, x, y in nodes: self.graph.add_station(n, x, y)
+        tracks = [
+            ("Alexandria", "Tanta"), ("Tanta", "Cairo"),
+            ("Port Said", "Ismailia"), ("Ismailia", "Cairo"), ("Ismailia", "Suez"),
+            ("Cairo", "Suez"), ("Cairo", "Beni Suef"),
+            ("Beni Suef", "Minya"), ("Minya", "Asyut"), ("Asyut", "Sohag"),
+            ("Sohag", "Qena"), ("Qena", "Luxor"), ("Luxor", "Aswan"),
+            ("Qena", "Safaga"), ("Safaga", "Hurghada")
+        ]
+        for u, v in tracks: self.graph.add_track(u, v)
+        self.scheduler = Scheduler(self.graph)
+        self._generate_default_trains(5)
+        self.update_stops_dropdown()
+        self.btn_scenario.set_text("SCENARIO: EGYPT")
+        print("Egypt Scenario Loaded")
+
+    def load_scenario_hub(self):
+        self.graph = RailwayGraph()
+        nodes = [("Central Hub", 600, 400), ("NorthA", 600, 200), ("NorthB", 600, 100),
+                 ("EastA", 800, 400), ("EastB", 900, 400), ("SouthA", 600, 600), ("SouthB", 600, 700),
+                 ("WestA", 400, 400), ("WestB", 300, 400)]
+        for n, x, y in nodes: self.graph.add_station(n, x, y)
+        tracks = [("Central Hub", "NorthA"), ("NorthA", "NorthB"), ("Central Hub", "EastA"), ("EastA", "EastB"),
+                  ("Central Hub", "SouthA"), ("SouthA", "SouthB"), ("Central Hub", "WestA"), ("WestA", "WestB"),
+                  ("NorthA", "EastA"), ("EastA", "SouthA"), ("SouthA", "WestA"), ("WestA", "NorthA")]
+        for u, v in tracks: self.graph.add_track(u, v)
+        self.scheduler = Scheduler(self.graph)
+        self._generate_default_trains(8)
+        self.update_stops_dropdown()
+        self.btn_scenario.set_text("SCENARIO: HUB")
+        print("Hub Scenario Loaded")
+
+    def load_scenario_london(self):
+        """Loads a rough approximation of the London Rail Network."""
+        self.graph = RailwayGraph()
+        nodes = [
+            ("Paddington", 200, 300), ("Marylebone", 300, 250),
+            ("Euston", 400, 200), ("Kings Cross", 500, 200),
+            ("Liverpool St", 700, 250), ("London Bridge", 650, 450),
+            ("Waterloo", 500, 500), ("Victoria", 350, 500),
+            ("Clapham Jct", 200, 600), ("Stratford", 800, 150)
         ]
         for n, x, y in nodes: self.graph.add_station(n, x, y)
 
         tracks = [
-            ("Hub", "A1"), ("A1", "A2"), ("Hub", "B1"), ("B1", "B2"),
-            ("Hub", "C1"), ("C1", "C2"), ("Hub", "D1"), ("D1", "D2"),
-            ("A1", "B1"), ("B1", "C1"), ("C1", "D1"), ("D1", "A1")
+            ("Paddington", "Marylebone"), ("Marylebone", "Euston"),
+            ("Euston", "Kings Cross"), ("Kings Cross", "Stratford"),
+            ("Kings Cross", "Liverpool St"), ("Liverpool St", "Stratford"),
+            ("Liverpool St", "London Bridge"), ("London Bridge", "Waterloo"),
+            ("Waterloo", "Victoria"), ("Victoria", "Clapham Jct"),
+            ("Clapham Jct", "Waterloo"), ("Paddington", "Victoria")
         ]
         for u, v in tracks: self.graph.add_track(u, v)
         self.scheduler = Scheduler(self.graph)
-        print("Scenario 2 Loaded")
+        self._generate_default_trains(6)
+        self.update_stops_dropdown()
+        self.btn_scenario.set_text("SCENARIO: LONDON")
+        print("London Scenario Loaded")
 
-    def load_scenario_3(self):
+    def load_scenario_empty(self):
+        """Loads a blank canvas with no trains."""
         self.graph = RailwayGraph()
         self.scheduler = Scheduler(self.graph)
-        print("Scenario 3 Loaded")
+        self.train_route_configs.clear()
+        self.update_stops_dropdown()
+        self.btn_scenario.set_text("SCENARIO: EMPTY")
+        print("Empty Scenario Loaded")
 
     def cycle_scenario(self):
-        if self.btn_scenario.text.endswith("HUB"):
-            self.load_scenario_2()
-            self.btn_scenario.text = "LOAD SCENARIO: Custom"
-        elif self.btn_scenario.text.endswith("Custom"):
-            self.load_scenario_3()
-            self.btn_scenario.text = "LOAD SCENARIO: LOOP"
+        txt = self.btn_scenario.text
+        if "EGYPT" in txt:
+            self.load_scenario_hub()
+        elif "HUB" in txt:
+            self.load_scenario_london()
+        elif "LONDON" in txt:
+            self.load_scenario_empty()
         else:
-            self.load_scenario_1()
-            self.btn_scenario.text = "LOAD SCENARIO: HUB"
+            self.load_scenario_egypt()
         self.reset_sim()
+
+    def add_custom_train(self):
+        try:
+            tid = int(self.input_tid.get_text())
+            c_str = self.input_tcolor.get_text().replace(',', ' ').split()
+            c_vals = tuple([min(255, max(0, int(c))) for c in c_str])
+            if len(c_vals) != 3: c_vals = (255, 255, 255)
+
+            route_str = self.input_troute.get_text().strip()
+            route = [n for n in route_str.split() if n in self.graph.cached_pos]
+
+            if len(route) < 2:
+                print("Error: Route must have at least 2 valid stations.")
+                return
+
+            delay = int(self.input_tstart.get_text())
+            self.train_route_configs[tid] = RouteConfig(tid, route, c_vals, delay)
+            self.table_dirty = True
+            print(f"Train {tid} added/updated.")
+        except ValueError:
+            print("Invalid input format.")
 
     def reset_sim(self):
         self.mode = "EDITOR"
         self.paused = False
         self.sim_time = 0
-        self.active_events.clear()
         self.train_agents.clear()
         self.scheduler.reset()
+        self.planned_events.clear()  # Clear scheduled events
         self.total_collisions_avoided = 0
         self.total_scheduling_time = 0
-        self.scheduling_ops = 0
-        self.btn_run.text = "START SIMULATION"
-        self.btn_run.color = COLORS["btn_active"]
-
-    def toggle_run(self):
-        if self.mode == "EDITOR":
-            self.start_simulation()
-        else:
-            self.reset_sim()
+        self.btn_run.set_text("START SIMULATION")
+        self.table_dirty = True
 
     def start_simulation(self):
-        try:
-            count = int(self.input_trains.text)
-        except:
-            count = 1
+        if not self.train_route_configs: return
+        self.reset_sim()
 
-        nodes = list(self.graph.graph.nodes())
-        if len(nodes) < 2: return
+        # Init agents and Schedule Full Routes
+        for tid, cfg in self.train_route_configs.items():
+            if not cfg.stops: continue
 
-        self.scheduler.reset()
-        self.active_events.clear()
-        self.train_agents.clear()
+            # Create Agent
+            start_node = cfg.stops[0]
+            agent = TrainAgent(id=tid, color=cfg.color, current_node=start_node)
+            agent.visual_pos = self.graph.cached_pos[start_node]
+            self.train_agents[tid] = agent
 
-        for i in range(count):
-            start = random.choice(nodes)
-            color = (random.randint(100, 255), random.randint(80, 255), random.randint(80, 255))
-            self.train_agents[i] = TrainAgent(id=i, pos=start, color=color, busy_until=0)
-            self.schedule_next_leg(i)
+            # Schedule the ENTIRE route (loop 24h to fill gantt)
+            curr_plan_time = self.sim_time + cfg.start_delay
+            # Plan 24 hours ahead for the chart
+            while curr_plan_time < 1440:
+                events, _, _ = self.scheduler.schedule_route(tid, cfg.stops, cfg.color, curr_plan_time,
+                                                             self.algorithm_mode)
+                if not events: break
+                self.planned_events.extend(events)
+                agent.schedule_queue.extend(events)
+                curr_plan_time = events[-1].end_time + 100  # Dwell time loop
 
         self.mode = "RUNNING"
-        self.btn_run.text = "RESET SIMULATION"
-        self.btn_run.color = COLORS["btn_inactive"]
+        self.btn_run.set_text("STOP SIMULATION")
+        self.table_dirty = True
 
-    def schedule_next_leg(self, train_id):
-        agent = self.train_agents[train_id]
-        nodes = list(self.graph.graph.nodes())
+    def schedule_agent_route(self, tid, start_time):
+        # NOTE: This method is used for dynamic reshceduling during run
+        agent = self.train_agents[tid]
+        cfg = self.train_route_configs[tid]
 
-        target = random.choice(nodes)
-        while target == agent.pos:
-            target = random.choice(nodes)
+        # Schedule full path
+        events, conflicts, dt = self.scheduler.schedule_route(tid, cfg.stops, cfg.color, start_time,
+                                                              self.algorithm_mode)
 
-        req = TrainRequest(train_id, agent.pos, target, agent.color)
-        events, avoided, latency = self.scheduler.schedule_request(req, self.sim_time, self.algorithm_mode)
-
-        self.total_collisions_avoided += avoided
-        self.total_scheduling_time += latency
+        self.total_collisions_avoided += conflicts
+        self.total_scheduling_time += dt
         self.scheduling_ops += 1
 
-        if events:
-            self.active_events.extend(events)
-            initial_wait = events[0].start_time - self.sim_time
-            agent.total_wait += initial_wait
-            agent.busy_until = events[-1].end_time
-            agent.pos = events[-1].target
-            agent.trips_completed += 1
-        else:
-            agent.busy_until = self.sim_time + 50
-            agent.total_wait += 50
+        # Note: We don't add to planned_events here to keep chart static
 
-    # --- MAIN LOOP ---
+        # Fill agent queue (Dynamic view for execution)
+        agent.schedule_queue.extend(events)
+
+        if events and not agent.current_event:
+            actual_start = events[0].start_time
+            agent.delay_accumulated = actual_start - start_time
+
+    def update_simulation(self):
+        self.sim_time += 1
+
+        # Cleanup old data every 500 ticks
+        if self.sim_time % 500 == 0:
+            self.scheduler.cleanup_old_reservations(self.sim_time)
+
+        for tid, agent in self.train_agents.items():
+            # 1. Update Current Event Logic
+            if not agent.current_event and agent.schedule_queue:
+                # Peek at next event
+                next_evt = agent.schedule_queue[0]
+                if self.sim_time >= next_evt.start_time:
+                    agent.current_event = agent.schedule_queue.popleft()
+
+            # 2. Update Status & Visuals
+            if agent.current_event:
+                evt = agent.current_event
+                # Accumulate Journey Time
+                agent.total_journey_time += 1
+
+                if self.sim_time <= evt.end_time:
+                    # MOVING
+                    agent.status = "MOVING"
+                    dur = evt.end_time - evt.start_time
+                    if dur > 0:
+                        t = (self.sim_time - evt.start_time) / dur
+                        x1, y1 = self.graph.cached_pos[evt.source]
+                        x2, y2 = self.graph.cached_pos[evt.target]
+                        agent.visual_pos = (x1 + t * (x2 - x1), y1 + t * (y2 - y1))
+                else:
+                    # Event Finished
+                    agent.status = "WAITING"
+                    agent.current_node = evt.target
+                    agent.visual_pos = self.graph.cached_pos[evt.target]
+                    agent.current_event = None
+                    agent.trips_completed += 1
+            else:
+                # No active event
+                if agent.schedule_queue:
+                    # Waiting for next event start
+                    next_start = agent.schedule_queue[0].start_time
+                    if next_start > self.sim_time + 10 and agent.delay_accumulated > 10:
+                        agent.status = "DELAYED"
+                    else:
+                        agent.status = "WAITING"
+                        agent.total_wait += 1  # Count waiting time
+                else:
+                    # Route Finished -> Loop
+                    agent.status = "ARRIVED"
+                    self.schedule_agent_route(tid, self.sim_time + 100)
+
     def run(self):
         running = True
         while running:
-            self.screen.fill(COLORS["bg"])
-            dt_ms = self.clock.tick(60)
+            time_delta = self.clock.tick(60) / 1000.0
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT: running = False
-
-                # --- WINDOW RESIZE ---
                 if event.type == pygame.VIDEORESIZE:
                     self.width, self.height = event.w, event.h
                     self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
-                    self.init_ui()  # Re-layout UI
+                    self.init_ui()
 
-                # --- INPUTS ---
-                if self.active_tab == "CONFIG" and self.mode == "EDITOR":
-                    self.input_name.handle_event(event)
-                    self.input_x.handle_event(event)
-                    self.input_y.handle_event(event)
-                    self.input_trains.handle_event(event)
-                    # Add Station
-                    if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
-                        if self.input_name.active:
-                            try:
-                                self.graph.add_station(self.input_name.text, int(self.input_x.text),
-                                                       int(self.input_y.text))
-                            except:
-                                pass
+                self.ui_manager.process_events(event)
 
-                # --- SLIDER ---
-                if self.active_tab == "CONFIG":
-                    self.slider_speed.handle_event(event)
-                    self.sim_speed = self.slider_speed.val
+                if event.type == pygame_gui.UI_HORIZONTAL_SLIDER_MOVED:
+                    if event.ui_element == self.slider_speed:
+                        self.sim_speed = self.slider_speed.get_current_value()
 
-                # --- MOUSE EVENTS ---
-                if event.type == pygame.MOUSEBUTTONDOWN:
-                    mx, my = pygame.mouse.get_pos()
+                # Handle Dropdown Selection
+                if event.type == pygame_gui.UI_DROP_DOWN_MENU_CHANGED:
+                    if event.ui_element == self.drop_stops:
+                        if event.text != "Select Station":  # Don't add placeholder
+                            current_text = self.input_troute.get_text()
+                            if current_text:
+                                self.input_troute.set_text(current_text + " " + event.text)
+                            else:
+                                self.input_troute.set_text(event.text)
 
-                    # 1. Check UI Interaction first (Right Panel)
-                    panel_start_x = self.width - 350
-                    if mx > panel_start_x:
-                        if self.tab_config.collidepoint((mx, my)):
-                            self.active_tab = "CONFIG"
-                        elif self.tab_status.collidepoint((mx, my)):
-                            self.active_tab = "STATUS"
-                        elif self.tab_timeline.collidepoint((mx, my)):
-                            self.active_tab = "TIMELINE"
-
-                        if self.active_tab == "CONFIG":
-                            self.btn_run.check_click((mx, my))
-                            self.btn_scenario.check_click((mx, my))
-
-                            # Algo Toggle
-                            algo_rect = pygame.Rect(panel_start_x + 50, 420, 200, 40)
-                            if algo_rect.collidepoint((mx, my)):
-                                self.algorithm_mode = "CSP" if self.algorithm_mode == "GREEDY" else "GREEDY"
-
-                    # 2. Check Map Zoom Controls
-                    elif self.btn_zoom_in.rect.collidepoint((mx, my)):
-                        self.zoom_in()
-                    elif self.btn_zoom_out.rect.collidepoint((mx, my)):
-                        self.zoom_out()
-
-                    # 3. Map Interaction (Click or Drag)
-                    else:
-                        # Check if clicking a node (World Coordinates)
-                        wx, wy = self.to_world(mx, my)
-                        pos = nx.get_node_attributes(self.graph.graph, 'pos')
-                        clicked_node = None
-                        for node, (nx_x, nx_y) in pos.items():
-                            if math.hypot(wx - nx_x, wy - nx_y) < 20:  # 20 is node radius tolerance
-                                clicked_node = node
-                                break
-
-                        if clicked_node and self.mode == "EDITOR":
-                            self.handle_link(clicked_node)
+                if event.type == pygame_gui.UI_BUTTON_PRESSED:
+                    if event.ui_element == self.btn_tab_config:
+                        self.active_tab = "CONFIG"
+                        self.update_ui_visibility()
+                    elif event.ui_element == self.btn_tab_schedules:
+                        self.active_tab = "SCHEDULES"
+                        self.update_ui_visibility()
+                    elif event.ui_element == self.btn_tab_status:
+                        self.active_tab = "STATS"
+                        self.update_ui_visibility()
+                    elif event.ui_element == self.btn_tab_table:
+                        self.active_tab = "TABLE"
+                        # Only update if we haven't generated it yet (start of sim)
+                        # or if we are in editor mode (adding trains)
+                        if self.mode == "EDITOR":
+                            self.table_dirty = True
+                        self.update_ui_visibility()
+                    elif event.ui_element == self.btn_run:
+                        if self.mode == "EDITOR":
+                            self.start_simulation()
                         else:
-                            # Start Dragging Camera
-                            self.is_dragging_map = True
-                            self.last_mouse_pos = (mx, my)
+                            self.reset_sim()
+                    elif event.ui_element == self.btn_scenario:
+                        self.cycle_scenario()
+                    elif event.ui_element == self.btn_algo:
+                        self.algorithm_mode = "GREEDY" if self.algorithm_mode == "CSP" else "CSP"
+                        self.btn_algo.set_text(f"ALGO: {self.algorithm_mode}")
+                    elif event.ui_element == self.btn_add_train:
+                        self.add_custom_train()
+                    elif event.ui_element == self.btn_clear_trains:
+                        self.train_route_configs.clear()
+                    elif event.ui_element == self.btn_current_trains:
+                        del self.train_route_configs[self.selected_train]
+                    elif event.ui_element == self.btn_zoom_in:
+                        self.zoom *= 1.1
+                    elif event.ui_element == self.btn_zoom_out:
+                        self.zoom /= 1.1
+
+                    # Color Buttons
+                    for btn, col in self.btn_colors:
+                        if event.ui_element == btn:
+                            self.input_tcolor.set_text(f"{col[0]} {col[1]} {col[2]}")
+
+                # Key Events
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
+                    if self.active_tab == "CONFIG":
+                        try:
+                            self.graph.add_station(self.input_name.get_text(), int(self.input_x.get_text()),
+                                                   int(self.input_y.get_text()))
+                            self.update_stops_dropdown()
+                        except:
+                            pass
+
+                # Mouse Interaction
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if self.active_tab == "SCHEDULES":
+                        mx, my = event.pos
+                        for rect, tid in self.train_list_rects:
+                            if rect.collidepoint(mx, my):
+                                cfg = self.train_route_configs[tid]
+                                self.selected_train = tid
+                                self.input_tid.set_text(str(tid))
+                                self.input_tcolor.set_text(f"{cfg.color[0]} {cfg.color[1]} {cfg.color[2]}")
+                                self.input_tstart.set_text(str(cfg.start_delay))
+                                self.input_troute.set_text(" ".join(cfg.stops))
+
+                    if event.pos[0] < self.width - 350:
+                        wx, wy = self.to_world(*event.pos)
+
+                        # --- RIGHT CLICK TO DELETE ---
+                        if event.button == 3 and self.mode == "EDITOR":
+                            # 1. Check Stations
+                            clicked_node = None
+                            for n, (nx_x, nx_y) in self.graph.cached_pos.items():
+                                if math.hypot(wx - nx_x, wy - nx_y) < (20 / self.zoom):
+                                    clicked_node = n
+                                    break
+
+                            if clicked_node:
+                                # Remove Node
+                                self.graph.graph.remove_node(clicked_node)
+                                del self.graph.cached_pos[clicked_node]
+                                for tid, cfg in self.train_route_configs.items():
+                                    if clicked_node in cfg.stops:
+                                        cfg.stops = [s for s in cfg.stops if s != clicked_node]
+                                self.update_stops_dropdown()
+                                self.table_dirty = True
+                                print(f"Deleted Station: {clicked_node}")
+                            else:
+                                # 2. Check Edges (Distance to line segment)
+                                clicked_edge = None
+                                for u, v in self.graph.get_all_edges():
+                                    x1, y1 = self.graph.cached_pos[u]
+                                    x2, y2 = self.graph.cached_pos[v]
+
+                                    # Point-Line Distance Logic
+                                    # A = wx,wy, B=x1,y1, C=x2,y2
+                                    # Proj P onto AB
+                                    l2 = (x1 - x2) ** 2 + (y1 - y2) ** 2
+                                    if l2 == 0: continue
+                                    t = ((wx - x1) * (x2 - x1) + (wy - y1) * (y2 - y1)) / l2
+                                    t = max(0, min(1, t))
+                                    px = x1 + t * (x2 - x1)
+                                    py = y1 + t * (y2 - y1)
+                                    dist = math.hypot(wx - px, wy - py)
+
+                                    if dist < (10 / self.zoom):
+                                        clicked_edge = (u, v)
+                                        break
+
+                                if clicked_edge:
+                                    self.graph.graph.remove_edge(*clicked_edge)
+                                    self.table_dirty = True
+                                    print(f"Deleted Track: {clicked_edge}")
+
+                        # --- LEFT CLICK TO SELECT/LINK ---
+                        elif event.button == 1:
+                            clicked = None
+                            for n, (nx_x, nx_y) in self.graph.cached_pos.items():
+                                if math.hypot(wx - nx_x, wy - nx_y) < (20 / self.zoom):
+                                    clicked = n
+                                    break
+
+                            if clicked and self.mode == "EDITOR":
+                                if self.selected_node_for_link is None:
+                                    self.selected_node_for_link = clicked
+                                elif self.selected_node_for_link != clicked:
+                                    self.graph.add_track(self.selected_node_for_link, clicked)
+                                    self.table_dirty = True
+                                    self.selected_node_for_link = None
+                                else:
+                                    self.selected_node_for_link = None
+                            elif not clicked:
+                                self.is_dragging_map = True
+                                self.last_mouse_pos = event.pos
 
                 elif event.type == pygame.MOUSEBUTTONUP:
                     self.is_dragging_map = False
 
-                elif event.type == pygame.MOUSEMOTION:
-                    if self.is_dragging_map:
-                        mx, my = pygame.mouse.get_pos()
-                        dx = mx - self.last_mouse_pos[0]
-                        dy = my - self.last_mouse_pos[1]
-                        self.cam_offset_x += dx
-                        self.cam_offset_y += dy
-                        self.last_mouse_pos = (mx, my)
+                elif event.type == pygame.MOUSEMOTION and self.is_dragging_map:
+                    mx, my = event.pos
+                    self.cam_offset_x += mx - self.last_mouse_pos[0]
+                    self.cam_offset_y += my - self.last_mouse_pos[1]
+                    self.last_mouse_pos = (mx, my)
 
-            # Logic Update (Accumulator for fractional speeds)
+                if event.type == pygame.MOUSEWHEEL and self.active_tab == "TABLE":
+                    self.table_scroll_y += event.y * 20
+                    self.table_scroll_y = min(0, self.table_scroll_y)
+
+            self.ui_manager.update(time_delta)
+
             if self.mode == "RUNNING" and not self.paused:
                 self.speed_accumulator += self.sim_speed
+                if self.speed_accumulator > 10: self.speed_accumulator = 10
                 while self.speed_accumulator >= 1.0:
                     self.update_simulation()
                     self.speed_accumulator -= 1.0
 
-            # Rendering
-            self.draw_map()
-            self.draw_ui_panel()
-            self.draw_overlay_info()
-
+            self.draw()
             pygame.display.flip()
 
-    def handle_link(self, clicked_node):
-        if self.selected_node_for_link is None:
-            self.selected_node_for_link = clicked_node
-        elif self.selected_node_for_link != clicked_node:
-            self.graph.add_track(self.selected_node_for_link, clicked_node)
-            self.selected_node_for_link = None
-        else:
-            self.selected_node_for_link = None
+    def draw(self):
+        self.screen.fill(COLORS["bg"])
+        self.draw_map_background()  # New Cartesian Grid
+        self.draw_map()
+        self.draw_ui_panel()
+        self.ui_manager.draw_ui(self.screen)
+        self.draw_overlay_info()
 
-    def update_simulation(self):
-        self.sim_time += 1
-        if self.sim_time % 500 == 0:
-            self.scheduler.cleanup_old_reservations(self.sim_time)
-        for agent in self.train_agents.values():
-            if self.sim_time >= agent.busy_until:
-                self.schedule_next_leg(agent.id)
-        self.active_events = [e for e in self.active_events if e.end_time > self.sim_time]
+    def draw_map_background(self):
+        """Draws a Cartesian grid on the map."""
+        # Grid Spacing
+        spacing = int(100 * self.zoom)
+        start_x = int(self.cam_offset_x % spacing)
+        start_y = int(self.cam_offset_y % spacing)
 
-    # --- DRAWING ---
+        for x in range(start_x, self.width, spacing):
+            pygame.draw.line(self.screen, COLORS["grid"], (x, 0), (x, self.height))
+        for y in range(start_y, self.height, spacing):
+            pygame.draw.line(self.screen, COLORS["grid"], (0, y), (self.width, y))
+
     def draw_map(self):
-        # Draw Tracks
-        pos = nx.get_node_attributes(self.graph.graph, 'pos')
-        for u, v in self.graph.graph.edges():
-            is_busy = False
-            edge_key = tuple(sorted((u, v)))
-            if edge_key in self.scheduler.reservations:
-                for start, end in self.scheduler.reservations[edge_key]:
-                    if start <= self.sim_time <= end:
-                        is_busy = True
-                        break
+        for u, v in self.graph.get_all_edges():
+            p1 = self.to_screen(*self.graph.cached_pos[u])
+            p2 = self.to_screen(*self.graph.cached_pos[v])
+            pygame.draw.line(self.screen, COLORS["edge"], p1, p2, 2)
 
-            color = (150, 100, 100) if is_busy else COLORS["edge"]
-            width = 5 if is_busy else 2
+        # Highlight Active Events (Moving Trains)
+        for agent in self.train_agents.values():
+            if agent.current_event:
+                evt = agent.current_event
+                p1 = self.to_screen(*self.graph.cached_pos[evt.source])
+                p2 = self.to_screen(*self.graph.cached_pos[evt.target])
+                pygame.draw.line(self.screen, COLORS["edge_active"], p1, p2, 4)
 
-            p1 = self.to_screen(*pos[u])
-            p2 = self.to_screen(*pos[v])
-            pygame.draw.line(self.screen, color, p1, p2, width)
-
-        # Draw Stations
-        for node, (x, y) in pos.items():
+        for node, (x, y) in self.graph.cached_pos.items():
             col = COLORS["node_selected"] if node == self.selected_node_for_link else COLORS["node"]
             sx, sy = self.to_screen(x, y)
 
-            # Culling: Don't draw if way off screen
             if -50 < sx < self.width + 50 and -50 < sy < self.height + 50:
-                pygame.draw.circle(self.screen, col, (sx, sy), int(12 * self.zoom))
-                if self.zoom > 0.5:  # Hide text if zoomed out too far
+                pygame.draw.circle(self.screen, col, (sx, sy), int(8 * self.zoom))
+                if self.zoom > 0.6:
                     lbl = self.font.render(node, True, COLORS["text"])
-                    self.screen.blit(lbl, (sx - 10, sy - 30 * self.zoom))
+                    self.screen.blit(lbl, (sx + 10, sy - 10))
 
-        # Draw Trains
-        for event in self.active_events:
-            if event.start_time <= self.sim_time <= event.end_time:
-                dur = event.end_time - event.start_time
-                if dur == 0: continue
-                t = (self.sim_time - event.start_time) / dur
-
-                x1, y1 = pos[event.source]
-                x2, y2 = pos[event.target]
-                curr_x = x1 + t * (x2 - x1)
-                curr_y = y1 + t * (y2 - y1)
-
-                scx, scy = self.to_screen(curr_x, curr_y)
-                agent = self.train_agents[event.train_id]
-                radius = int(10 * self.zoom)
-                pygame.draw.circle(self.screen, agent.color, (scx, scy), radius)
-                pygame.draw.circle(self.screen, (0, 0, 0), (scx, scy), radius, 1)
+        for agent in self.train_agents.values():
+            sx, sy = self.to_screen(*agent.visual_pos)
+            if agent.status == "DELAYED":
+                pygame.draw.circle(self.screen, COLORS["status_delayed"], (sx, sy), int(14 * self.zoom), 2)
+            pygame.draw.circle(self.screen, agent.color, (sx, sy), int(10 * self.zoom))
 
     def draw_ui_panel(self):
         panel_x = self.width - 350
-
-        # Background
         pygame.draw.rect(self.screen, COLORS["panel"], (panel_x, 0, 350, self.height))
         pygame.draw.line(self.screen, (100, 100, 100), (panel_x, 0), (panel_x, self.height), 2)
 
-        # Tabs
-        for r, t, name in [(self.tab_config, "CONFIG", "CONFIG"),
-                           (self.tab_status, "STATUS", "STATUS"),
-                           (self.tab_timeline, "TIMELINE", "TIMELINE")]:
-            col = COLORS["tab_active"] if self.active_tab == t else COLORS["tab_inactive"]
-            pygame.draw.rect(self.screen, col, r, border_radius=5)
-            txt = self.font.render(name, True, COLORS["text"])
-            self.screen.blit(txt, (r.x + 10, r.y + 10))
-
-        # Content Areas
         if self.active_tab == "CONFIG":
             self.draw_tab_config(panel_x)
-        elif self.active_tab == "STATUS":
-            self.draw_tab_status(panel_x)
-        elif self.active_tab == "TIMELINE":
-            self.draw_tab_timeline(panel_x)
+        elif self.active_tab == "SCHEDULES":
+            self.draw_tab_schedules(panel_x)
+        elif self.active_tab == "STATS":
+            self.draw_tab_stats(panel_x)
+        elif self.active_tab == "TABLE":
+            self.draw_tab_table(panel_x)
 
     def draw_tab_config(self, px):
         y = 60
-        self.screen.blit(self.header_font.render("Map Editor", True, COLORS["text"]), (px + 10, y))
+        self.screen.blit(self.header_font.render("Editor Settings:", True, COLORS["text"]), (px + 10, y))
         y += 40
         self.screen.blit(self.font.render("Station Name:", True, COLORS["text"]), (px + 10, y))
-        self.input_name.draw(self.screen)
         y += 70
-        self.screen.blit(self.font.render("Pos X:", True, COLORS["text"]), (px + 10, y))
-        self.input_x.draw(self.screen)
-        self.screen.blit(self.font.render("Pos Y:", True, COLORS["text"]), (px + 120, y))
-        self.input_y.draw(self.screen)
-
+        self.screen.blit(self.font.render("X:", True, COLORS["text"]), (px + 10, y))
+        self.screen.blit(self.font.render("Y:", True, COLORS["text"]), (px + 120, y))
         y += 80
-        pygame.draw.line(self.screen, (100, 100, 100), (px + 10, y), (self.width - 20, y), 1)
-        y += 20
-
-        self.screen.blit(self.header_font.render("Simulation Settings", True, COLORS["text"]), (px + 10, y))
-        y += 50
-
-        self.screen.blit(self.font.render("Initial Trains:", True, COLORS["text"]), (px + 10, y + 5))
-        self.input_trains.draw(self.screen)
-        y += 60
-
-        self.screen.blit(self.font.render("Scheduler Algorithm:", True, COLORS["text"]), (px + 10, y))
-        y += 30
-        mode_rect = pygame.Rect(px + 50, y, 200, 40)
-        mode_col = (100, 200, 150) if self.algorithm_mode == "CSP" else (200, 100, 100)
-        pygame.draw.rect(self.screen, mode_col, mode_rect, border_radius=5)
-        mtxt = self.font.render(self.algorithm_mode, True, (0, 0, 0))
-        self.screen.blit(mtxt, (mode_rect.centerx - mtxt.get_width() // 2, mode_rect.y + 10))
+        self.screen.blit(self.status_font.render("(Press Enter to Add Station)", True, (150, 150, 150)), (px + 10, y))
+        y += 40
+        self.screen.blit(self.header_font.render("Simulation Control:", True, COLORS["text"]), (px + 10, y))
         y += 80
+        self.screen.blit(self.font.render("Algorithm Mode:", True, COLORS["text"]), (px + 10, y))
+        y += 100
+        self.screen.blit(self.font.render(f"Sim Speed: {self.sim_speed:.1f}x", True, COLORS["text"]), (px + 10, y))
 
-        # Controls
-        self.screen.blit(self.font.render(f"Sim Speed: {self.sim_speed:.1f}x", True, COLORS["text"]), (px + 10, 530))
-        self.slider_speed.draw(self.screen)
-
-        self.btn_scenario.draw(self.screen)
-        self.btn_run.draw(self.screen)
-
-    def draw_tab_status(self, px):
+    def draw_tab_schedules(self, px):
         y = 60
-        self.screen.blit(self.header_font.render("Live Statistics", True, COLORS["text"]), (px + 10, y))
+        self.screen.blit(self.header_font.render("Schedule Management", True, COLORS["text"]), (px + 10, y))
+        y += 25
+        self.screen.blit(self.font.render("ID:", True, COLORS["text"]), (px + 20, y + 5))
+        self.screen.blit(self.font.render("Color:", True, COLORS["text"]), (px + 120, y + 5))
+        self.screen.blit(self.font.render("Delay:", True, COLORS["text"]), (px + 230, y + 5))
+        y += 100
+        self.screen.blit(self.font.render("Stops (Space Separated):", True, COLORS["text"]), (px + 10, y))
+        y += 30
+        self.screen.blit(self.status_font.render("Select stops via dropdown:", True, (150, 150, 150)), (px + 10, y))
+        y += 230
+        self.screen.blit(self.header_font.render("Current Manifest (Click to Edit)", True, COLORS["text"]),
+                         (px + 10, y))
+        y += 30
+
+        self.train_list_rects.clear()
+        for tid, cfg in list(self.train_route_configs.items())[:12]:
+            stops_str = " -> ".join([s[:3] for s in cfg.stops])
+            txt = f"#{tid} {stops_str}"
+            if len(txt) > 35: txt = txt[:32] + "..."
+
+            row_rect = pygame.Rect(px + 10, y, 320, 20)
+            self.train_list_rects.append((row_rect, tid))
+
+            mx, my = pygame.mouse.get_pos()
+            if row_rect.collidepoint(mx, my):
+                pygame.draw.rect(self.screen, (60, 60, 70), row_rect)
+
+            pygame.draw.rect(self.screen, cfg.color, (px + 10, y + 5, 10, 10))
+            self.screen.blit(self.status_font.render(txt, True, COLORS["text"]), (px + 25, y + 2))
+            y += 24
+
+    def draw_tab_stats(self, px):
+        y = 60
+        self.screen.blit(self.header_font.render("Live Metrics", True, COLORS["text"]), (px + 10, y))
+        y += 30
+
+        avg_lat = (self.total_scheduling_time / self.scheduling_ops) if self.scheduling_ops > 0 else 0
+        self.screen.blit(self.font.render(f"Avg Calculation: {avg_lat:.2f} ms", True, (150, 255, 150)), (px + 20, y))
+        y += 20
+        self.screen.blit(
+            self.font.render(f"Conflicts Resolved: {self.total_collisions_avoided}", True, (255, 100, 100)),
+            (px + 20, y))
         y += 40
 
-        avg_sched = (self.total_scheduling_time / self.scheduling_ops) if self.scheduling_ops > 0 else 0
-        stats = [
-            f"Sim Time: {self.sim_time} ticks",
-            f"Active Trains: {len(self.train_agents)}",
-            f"Collisions Avoided: {self.total_collisions_avoided}",
-            f"Scheduling Latency: {avg_sched:.2f}ms",
-            f"Ops Performed: {self.scheduling_ops}"
-        ]
-
-        for s in stats:
-            self.screen.blit(self.font.render(s, True, (200, 255, 200)), (px + 10, y))
-            y += 30
-
-        y += 20
-        pygame.draw.line(self.screen, (100, 100, 100), (px + 10, y), (self.width - 20, y), 1)
-        y += 20
-        self.screen.blit(self.header_font.render("Train Status", True, COLORS["text"]), (px + 10, y))
+        self.screen.blit(self.header_font.render("Train Stats", True, COLORS["text"]), (px + 10, y))
         y += 30
 
-        for i, agent in enumerate(list(self.train_agents.values())[:10]):
-            status = "Moving" if self.sim_time < agent.busy_until else "Waiting"
-            col = agent.color
-            pygame.draw.rect(self.screen, col, (px + 10, y, 20, 20))
+        for agent in self.train_agents.values():
+            if y > self.height - 20: break
 
-            info = f"#{agent.id} -> {agent.pos[:8]} ({status})"
-            self.screen.blit(self.font.render(info, True, COLORS["text"]), (px + 40, y))
-            y += 25
+            # Format total Journey time
+            total_min = agent.total_journey_time + agent.total_wait
+            J_hrs = total_min // 60
+            J_mins = total_min % 60
 
-    def draw_tab_timeline(self, px):
+            # Format total waiting time
+            total_min = agent.total_wait
+            W_hrs = total_min // 60
+            W_mins = total_min % 60
+
+            # Determine next destination
+            next_dest = "End"
+            if agent.current_event:
+                next_dest = agent.current_event.target
+            elif agent.schedule_queue:
+                next_dest = agent.schedule_queue[0].target
+
+            c = COLORS["status_moving"] if agent.status == "MOVING" else COLORS["status_waiting"]
+            info = f"#{agent.id} Journey: {J_hrs}h {J_mins}m | Wait: {W_hrs}h {W_mins}m \n Next: {next_dest}"
+
+            self.screen.blit(self.status_font.render(info, True, c), (px + 20, y))
+            y += 40
+
+    def draw_tab_table(self, px):
+        """Draws a Static Gantt Chart of Track Reservations."""
         y = 60
-        self.screen.blit(self.header_font.render("Track Occupancy", True, COLORS["text"]), (px + 10, y))
-        y += 30
+        self.screen.blit(self.header_font.render("Track Usage (Gantt)", True, COLORS["text"]), (px + 10, y))
+        y += 40
 
-        window_size = 1000
-        bar_height = 15
-        chart_w = 300
+        # Sort edges for Y-Axis
+        edges = sorted(self.graph.get_all_edges(), key=lambda e: e[0])
 
-        edges = self.graph.get_all_edges()
+        # Generate surface if dirty
+        if self.table_dirty:
+            h = max(600, len(edges) * 30 + 50)
+            self.table_surface = pygame.Surface((340, h))
+            self.table_surface.fill(COLORS["panel"])
 
-        pygame.draw.line(self.screen, (255, 255, 255), (px + 10, y), (px + 10, 750), 1)
-        pygame.draw.line(self.screen, (255, 255, 255), (px + 10, 750), (self.width - 20, 750), 1)
+            # X-Axis Time (0 - 1440)
+            window_size = 1440  # 1 Day
+            graph_w = 260
+            x_offset = 70
 
-        start_y = y + 10
+            # Draw Time Grid Lines
+            for hr in range(0, 25, 4):
+                tx = x_offset + (hr * 60 / window_size) * graph_w
+                pygame.draw.line(self.table_surface, (70, 70, 70), (tx, 0), (tx, h))
+                self.table_surface.blit(self.status_font.render(f"{hr}", True, (150, 150, 150)), (tx - 5, 0))
 
-        for idx, (u, v) in enumerate(edges[:20]):
-            if start_y > 720: break
+            ty = 20
+            # Use PLANNED EVENTS for correct, static display of schedule
+            for u, v in edges:
+                lbl = self.status_font.render(f"{u[:3]}-{v[:3]}", True, (180, 180, 180))
+                self.table_surface.blit(lbl, (5, ty))
 
-            lbl = self.font.render(f"{u[:3]}-{v[:3]}", True, (180, 180, 180))
-            self.screen.blit(lbl, (px + 15, start_y))
+                # Check persistent schedule list
+                for evt in self.planned_events:
+                    # Check if event matches this edge (undirected check)
+                    match = (evt.source == u and evt.target == v) or (evt.source == v and evt.target == u)
+                    if match:
+                        r_start, r_end = evt.start_time, evt.end_time
 
-            edge_key = tuple(sorted((u, v)))
-            if edge_key in self.scheduler.reservations:
-                for r_start, r_end in self.scheduler.reservations[edge_key]:
-                    if r_end < self.sim_time or r_start > self.sim_time + window_size:
-                        continue
+                        disp_start = r_start % window_size
+                        disp_end = r_end % window_size
+                        if disp_end < disp_start: disp_end = window_size
 
-                    disp_start = max(0, r_start - self.sim_time)
-                    disp_end = min(window_size, r_end - self.sim_time)
+                        rx = x_offset + (disp_start / window_size) * graph_w
+                        rw = ((disp_end - disp_start) / window_size) * graph_w
 
-                    x_pos = (px + 90) + (disp_start / window_size) * (chart_w - 80)
-                    w = ((disp_end - disp_start) / window_size) * (chart_w - 80)
+                        col = evt.color if hasattr(evt, 'color') else (200, 200, 200)
+                        pygame.draw.rect(self.table_surface, col, (rx, ty, max(2, int(rw)), 15))
 
-                    if w < 1: w = 1
+                pygame.draw.line(self.table_surface, (60, 60, 60), (0, ty + 20), (340, ty + 20), 1)
+                ty += 30
 
-                    pygame.draw.rect(self.screen, COLORS["timeline_bar"], (x_pos, start_y, w, bar_height))
+            self.table_dirty = False
 
-            start_y += 25
+        # Clip and Draw
+        timeline_rect = pygame.Rect(px + 5, y, 340, self.height - y - 10)
+        self.screen.set_clip(timeline_rect)
+        if self.table_surface:
+            self.screen.blit(self.table_surface, (px + 5, y + self.table_scroll_y))
+
+            # Draw "Now" Line on top
+            curr_day_ticks = self.sim_time % 1440
+            now_x = (px + 5) + 70 + (curr_day_ticks / 1440) * 260
+            pygame.draw.line(self.screen, (255, 255, 255), (now_x, y), (now_x, self.height), 1)
+
+        self.screen.set_clip(None)
 
     def draw_overlay_info(self):
-        # Draw Zoom Controls Overlay
-        self.btn_zoom_in.draw(self.screen)
-        self.btn_zoom_out.draw(self.screen)
+        total_minutes = self.sim_time
+        day = (total_minutes // 1440) + 1
+        mins_rem = total_minutes % 1440
+        hrs = mins_rem // 60
+        mns = mins_rem % 60
 
-        # Draw Timer
-        minutes = int(self.sim_time / 3600)
-        seconds = int((self.sim_time / 60) % 60)
-
-        surf = self.header_font.render(f"{minutes:02d}:{seconds:02d}", True, (255, 255, 255))
-        bg = surf.get_rect(topleft=(20, 20))
-        bg.inflate_ip(20, 10)
-        pygame.draw.rect(self.screen, (0, 0, 0), bg, border_radius=5)
+        txt = f"Day {day} - {hrs:02d}:{mns:02d}"
+        surf = self.header_font.render(txt, True, (255, 255, 255))
+        pygame.draw.rect(self.screen, (0, 0, 0), (20, 20, 180, 40), border_radius=5)
         self.screen.blit(surf, (30, 25))
+
+    def _get_edge_key(self, u, v):
+        return tuple(sorted((u, v)))
 
 
 if __name__ == "__main__":
