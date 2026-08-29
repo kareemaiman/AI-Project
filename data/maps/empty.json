@@ -1,0 +1,7 @@
+{
+  "name": "Empty Canvas",
+  "description": "Blank railway canvas for creating and saving custom network layouts.",
+  "stations": [],
+  "tracks": [],
+  "trains": []
+}

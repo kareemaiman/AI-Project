@@ -1,0 +1,36 @@
+{
+  "name": "Central Hub Benchmark",
+  "description": "Radial spoke-and-hub railway topology with outer bypass tracks.",
+  "stations": [
+    {"name": "Central Hub", "x": 600, "y": 400},
+    {"name": "NorthA", "x": 600, "y": 200},
+    {"name": "NorthB", "x": 600, "y": 100},
+    {"name": "EastA", "x": 800, "y": 400},
+    {"name": "EastB", "x": 900, "y": 400},
+    {"name": "SouthA", "x": 600, "y": 600},
+    {"name": "SouthB", "x": 600, "y": 700},
+    {"name": "WestA", "x": 400, "y": 400},
+    {"name": "WestB", "x": 300, "y": 400}
+  ],
+  "tracks": [
+    ["Central Hub", "NorthA"],
+    ["NorthA", "NorthB"],
+    ["Central Hub", "EastA"],
+    ["EastA", "EastB"],
+    ["Central Hub", "SouthA"],
+    ["SouthA", "SouthB"],
+    ["Central Hub", "WestA"],
+    ["WestA", "WestB"],
+    ["NorthA", "EastA"],
+    ["EastA", "SouthA"],
+    ["SouthA", "WestA"],
+    ["WestA", "NorthA"]
+  ],
+  "trains": [
+    {"id": 201, "stops": ["NorthB", "NorthA", "Central Hub", "SouthA", "SouthB"], "color": [255, 70, 70], "start_delay": 0, "priority": 1},
+    {"id": 202, "stops": ["WestB", "WestA", "Central Hub", "EastA", "EastB"], "color": [60, 220, 90], "start_delay": 15, "priority": 1},
+    {"id": 203, "stops": ["NorthA", "EastA", "SouthA", "WestA", "NorthA"], "color": [70, 140, 255], "start_delay": 30, "priority": 2},
+    {"id": 204, "stops": ["SouthB", "SouthA", "Central Hub", "NorthA", "NorthB"], "color": [255, 215, 0], "start_delay": 45, "priority": 2},
+    {"id": 205, "stops": ["EastB", "EastA", "SouthA", "WestA"], "color": [50, 220, 220], "start_delay": 60, "priority": 3}
+  ]
+}

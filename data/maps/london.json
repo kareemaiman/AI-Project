@@ -1,0 +1,36 @@
+{
+  "name": "London Rail Terminals",
+  "description": "Topological map of major London railway terminals and junction interconnects.",
+  "stations": [
+    {"name": "Paddington", "x": 200, "y": 300},
+    {"name": "Marylebone", "x": 300, "y": 250},
+    {"name": "Euston", "x": 400, "y": 200},
+    {"name": "Kings Cross", "x": 500, "y": 200},
+    {"name": "Liverpool St", "x": 700, "y": 250},
+    {"name": "London Bridge", "x": 650, "y": 450},
+    {"name": "Waterloo", "x": 500, "y": 500},
+    {"name": "Victoria", "x": 350, "y": 500},
+    {"name": "Clapham Jct", "x": 200, "y": 600},
+    {"name": "Stratford", "x": 800, "y": 150}
+  ],
+  "tracks": [
+    ["Paddington", "Marylebone"],
+    ["Marylebone", "Euston"],
+    ["Euston", "Kings Cross"],
+    ["Kings Cross", "Stratford"],
+    ["Kings Cross", "Liverpool St"],
+    ["Liverpool St", "Stratford"],
+    ["Liverpool St", "London Bridge"],
+    ["London Bridge", "Waterloo"],
+    ["Waterloo", "Victoria"],
+    ["Victoria", "Clapham Jct"],
+    ["Clapham Jct", "Waterloo"],
+    ["Paddington", "Victoria"]
+  ],
+  "trains": [
+    {"id": 301, "stops": ["Paddington", "Marylebone", "Euston", "Kings Cross", "Stratford"], "color": [255, 70, 70], "start_delay": 0, "priority": 1},
+    {"id": 302, "stops": ["Clapham Jct", "Victoria", "Waterloo", "London Bridge", "Liverpool St"], "color": [60, 220, 90], "start_delay": 15, "priority": 1},
+    {"id": 303, "stops": ["Stratford", "Liverpool St", "London Bridge", "Waterloo", "Victoria"], "color": [70, 140, 255], "start_delay": 30, "priority": 2},
+    {"id": 304, "stops": ["Paddington", "Victoria", "Clapham Jct", "Waterloo"], "color": [255, 140, 40], "start_delay": 45, "priority": 2}
+  ]
+}

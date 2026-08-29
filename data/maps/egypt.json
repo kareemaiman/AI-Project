@@ -1,0 +1,45 @@
+{
+  "name": "Egypt National Rail",
+  "description": "Topological map of Egyptian National Railways network connecting Delta cities, Nile Valley and Red Sea ports.",
+  "stations": [
+    {"name": "Alexandria", "x": 450, "y": 100},
+    {"name": "Port Said", "x": 650, "y": 100},
+    {"name": "Tanta", "x": 520, "y": 180},
+    {"name": "Ismailia", "x": 650, "y": 200},
+    {"name": "Cairo", "x": 550, "y": 250},
+    {"name": "Suez", "x": 680, "y": 250},
+    {"name": "Beni Suef", "x": 550, "y": 350},
+    {"name": "Minya", "x": 550, "y": 450},
+    {"name": "Asyut", "x": 580, "y": 520},
+    {"name": "Sohag", "x": 600, "y": 580},
+    {"name": "Qena", "x": 620, "y": 630},
+    {"name": "Luxor", "x": 620, "y": 680},
+    {"name": "Aswan", "x": 620, "y": 780},
+    {"name": "Hurghada", "x": 750, "y": 500},
+    {"name": "Safaga", "x": 750, "y": 550}
+  ],
+  "tracks": [
+    ["Alexandria", "Tanta"],
+    ["Tanta", "Cairo"],
+    ["Port Said", "Ismailia"],
+    ["Ismailia", "Cairo"],
+    ["Ismailia", "Suez"],
+    ["Cairo", "Suez"],
+    ["Cairo", "Beni Suef"],
+    ["Beni Suef", "Minya"],
+    ["Minya", "Asyut"],
+    ["Asyut", "Sohag"],
+    ["Sohag", "Qena"],
+    ["Qena", "Luxor"],
+    ["Luxor", "Aswan"],
+    ["Qena", "Safaga"],
+    ["Safaga", "Hurghada"]
+  ],
+  "trains": [
+    {"id": 101, "stops": ["Alexandria", "Tanta", "Cairo", "Beni Suef", "Minya"], "color": [255, 70, 70], "start_delay": 0, "priority": 1},
+    {"id": 102, "stops": ["Aswan", "Luxor", "Qena", "Sohag", "Asyut", "Cairo"], "color": [60, 220, 90], "start_delay": 20, "priority": 1},
+    {"id": 103, "stops": ["Port Said", "Ismailia", "Cairo", "Alexandria"], "color": [70, 140, 255], "start_delay": 40, "priority": 2},
+    {"id": 104, "stops": ["Suez", "Ismailia", "Cairo", "Beni Suef"], "color": [255, 215, 0], "start_delay": 60, "priority": 2},
+    {"id": 105, "stops": ["Hurghada", "Safaga", "Qena", "Luxor"], "color": [220, 80, 220], "start_delay": 80, "priority": 3}
+  ]
+}

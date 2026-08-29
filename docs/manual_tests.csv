@@ -1,0 +1,20 @@
+Test_ID,Category,Description,Preconditions,Action_Steps,Expected_Result,Status
+TC-001,UI_Interaction,Tab Navigation,Application launched in EDITOR mode,"Click CONFIG, SCHED, STATS, TABLE tabs sequentially",Appropriate panels and UI controls display without overlap or lingering elements,PASSED
+TC-002,UI_Interaction,Window Resizing,Application running,"Resize application window (e.g. from 1280x720 to 1600x900)",UI layout adapts and repositioned panels/inputs retain state without crash,PASSED
+TC-003,Editor,Station Creation,CONFIG tab active,"Enter Station Name 'Giza', X '500', Y '300', press Enter",Station node appears on map and appears in Station dropdown,PASSED
+TC-004,Editor,Track Creation,CONFIG tab active,"Click station A then click station B",Bi-directional track segment line renders between stations,PASSED
+TC-005,Editor,Station Deletion,CONFIG tab active,"Right-click an existing station node",Station and all attached track segments are cleanly removed,PASSED
+TC-006,Editor,Track Deletion,CONFIG tab active,"Right-click an existing track line",Track segment is cleanly removed from graph model,PASSED
+TC-007,Schedule_Management,Add Custom Train,SCHED tab active,"Enter ID '201', select stops 'Cairo Alexandria', click ADD / UPDATE TRAIN",Train appears in manifest list with correct color and stops,PASSED
+TC-008,Schedule_Management,Delete Selected Train,SCHED tab active,"Click train in manifest list, click CLEAR SELECTED",Selected train is removed from manifest list without crash,PASSED
+TC-009,Schedule_Management,Safe Delete Without Selection,SCHED tab active,Click CLEAR SELECTED when no train is selected,Application displays warning/handles gracefully without KeyError crash,PASSED
+TC-010,Scenario_Management,Cycle JSON Maps,CONFIG tab active,"Click MAP button to cycle through all discovered JSON maps in data/maps/",Scenario topology and default train manifest reload smoothly from JSON,PASSED
+TC-011,Scenario_Management,Save Custom Map to JSON,CONFIG tab active,"Edit map, click SAVE MAP JSON",Custom map JSON is written to data/maps/ and dynamically added to scenario list,PASSED
+TC-012,Generators,Generate Random Railway Map,CONFIG tab active,Click GENERATE RANDOM MAP,Procedural connected MST topology and random train fleet are generated,PASSED
+TC-013,Algorithms,Cycle Deconfliction Solvers,CONFIG tab active,"Click ALGO button to cycle CSP, GREEDY, PRIORITY_EDF, DYNAMIC_REROUTE",Active scheduler solver updates dynamically with live telemetry feedback,PASSED
+TC-014,Pathfinding,Graph Path Algorithms,Valid railway graph,"Execute BFS, DFS, Dijkstra, and Floyd-Warshall path algorithms",Pathfinders compute optimal or alternative hop routes without errors,PASSED
+TC-015,Deconfliction,Opposing Single Track Conflict,Two trains on single track with opposite directions,"Start simulation with trains scheduled on conflicting paths",Scheduler delays departure of second train; zero head-on collisions,PASSED
+TC-016,Gantt_Chart,24-Hour Timeline Rendering,Simulation running or planned,"Open TABLE tab, scroll mouse wheel up/down",Gantt timeline bars render correctly with day-wrap boundary handling,PASSED
+TC-017,Configuration,Data-Driven Fallback Recovery,Corrupted data/config.json,Launch application with missing/invalid config.json,ConfigManager falls back gracefully to defaults and regenerates config file,PASSED
+TC-018,Logging,Structured Rotating Logging,Application running,Perform operations and inspect smart_rail.log,Structured log entries with timestamps and severity levels are recorded,PASSED
+TC-019,Documentation,Automated Functions Parser,Codebase modified,Run 'python scripts/parse_functions.py',functions.md updates automatically across all subpackages,PASSED

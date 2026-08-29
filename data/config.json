@@ -1,0 +1,68 @@
+{
+  "window": {
+    "title": "Smart Rail: Multi-Train AI Conflict Resolution Simulator",
+    "width": 1280,
+    "height": 720,
+    "panel_width": 350,
+    "tab_width": 87,
+    "target_fps": 60
+  },
+  "simulation": {
+    "speed_pixels_per_tick": 5.0,
+    "default_safety_margin_ticks": 15.0,
+    "station_dwell_ticks": 5,
+    "cleanup_interval_ticks": 500,
+    "loop_restart_delay_ticks": 100,
+    "day_window_minutes": 1440,
+    "max_speed_multiplier": 10.0,
+    "default_speed_multiplier": 1.0
+  },
+  "logging": {
+    "level": "INFO",
+    "log_file": "smart_rail.log",
+    "max_bytes": 2097152,
+    "backup_count": 3
+  },
+  "colors": {
+    "bg": [28, 28, 34],
+    "grid": [42, 42, 50],
+    "node": [90, 195, 250],
+    "node_selected": [255, 215, 0],
+    "node_hover": [140, 225, 255],
+    "edge": [65, 65, 75],
+    "edge_active": [120, 120, 135],
+    "text": [235, 235, 240],
+    "text_muted": [160, 160, 170],
+    "panel": [38, 38, 46],
+    "panel_border": [60, 60, 72],
+    "input_bg": [24, 24, 30],
+    "btn_active": [65, 155, 95],
+    "btn_inactive": [175, 55, 55],
+    "btn_neutral": [75, 75, 95],
+    "tab_active": [95, 95, 115],
+    "tab_inactive": [48, 48, 58],
+    "timeline_bar": [95, 195, 145],
+    "timeline_grid": [65, 65, 75],
+    "status_waiting": [255, 195, 75],
+    "status_moving": [75, 240, 110],
+    "status_delayed": [255, 75, 75],
+    "status_arrived": [160, 120, 240]
+  },
+  "preset_train_colors": [
+    [255, 70, 70],
+    [60, 220, 90],
+    [70, 140, 255],
+    [255, 215, 0],
+    [50, 220, 220],
+    [220, 80, 220],
+    [255, 140, 40],
+    [170, 90, 255]
+  ],
+  "typography": {
+    "font_family": "Arial",
+    "status_font_family": "Consolas",
+    "font_size": 15,
+    "header_font_size": 20,
+    "status_font_size": 13
+  }
+}

@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pygame & OS generated
+*.log
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Legacy archive folder
+legacy_archive/
+
+# Editor settings
+.vscode/
+.idea/
+*.swp
