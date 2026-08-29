@@ -36,83 +36,92 @@ class SimulatorUI:
         self.manager.set_window_resolution((self.width, self.height))
 
         panel_w = self.cfg.get("window", "panel_width", 350)
-        tab_w = self.cfg.get("window", "tab_width", 87)
         panel_x = self.width - panel_w
+        tab_w = panel_w // 4
 
         # --- Tab Switcher Buttons ---
         self.btn_tab_config = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x, 0), (tab_w, 40)),
+            relative_rect=pygame.Rect((panel_x, 0), (tab_w, 38)),
             text='CONFIG', manager=self.manager
         )
         self.btn_tab_schedules = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x + tab_w, 0), (tab_w, 40)),
+            relative_rect=pygame.Rect((panel_x + tab_w, 0), (tab_w, 38)),
             text='SCHED', manager=self.manager
         )
         self.btn_tab_status = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x + tab_w * 2, 0), (tab_w, 40)),
+            relative_rect=pygame.Rect((panel_x + tab_w * 2, 0), (tab_w, 38)),
             text='STATS', manager=self.manager
         )
         self.btn_tab_table = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x + tab_w * 3, 0), (tab_w, 40)),
+            relative_rect=pygame.Rect((panel_x + tab_w * 3, 0), (panel_w - tab_w * 3, 38)),
             text='TABLE', manager=self.manager
         )
 
         # --- CONFIG Tab Widgets ---
         self.input_name = pygame_gui.elements.UITextEntryLine(
-            relative_rect=pygame.Rect((panel_x + 15, 95), (200, 30)), manager=self.manager
+            relative_rect=pygame.Rect((panel_x + 15, 90), (320, 28)), manager=self.manager
         )
         self.input_name.set_text("StationX")
+
         self.input_x = pygame_gui.elements.UITextEntryLine(
-            relative_rect=pygame.Rect((panel_x + 15, 155), (90, 30)), manager=self.manager
+            relative_rect=pygame.Rect((panel_x + 15, 144), (150, 28)), manager=self.manager
         )
         self.input_x.set_text("400")
+
         self.input_y = pygame_gui.elements.UITextEntryLine(
-            relative_rect=pygame.Rect((panel_x + 125, 155), (90, 30)), manager=self.manager
+            relative_rect=pygame.Rect((panel_x + 185, 144), (150, 28)), manager=self.manager
         )
         self.input_y.set_text("300")
 
+        algo_opts = ["CSP", "GREEDY", "PRIORITY_EDF", "DYNAMIC_REROUTE"]
+        start_algo = algorithm_name.upper() if algorithm_name.upper() in algo_opts else "CSP"
         self.drop_algo = pygame_gui.elements.UIDropDownMenu(
-            options_list=["CSP", "GREEDY", "PRIORITY_EDF", "DYNAMIC_REROUTE"],
-            starting_option=algorithm_name if algorithm_name in ["CSP", "GREEDY", "PRIORITY_EDF", "DYNAMIC_REROUTE"] else "CSP",
-            relative_rect=pygame.Rect((panel_x + 15, 305), (220, 32)),
+            options_list=algo_opts,
+            starting_option=start_algo,
+            relative_rect=pygame.Rect((panel_x + 15, 278), (320, 30)),
             manager=self.manager
         )
+
         self.slider_speed = pygame_gui.elements.UIHorizontalSlider(
-            relative_rect=pygame.Rect((panel_x + 15, 375), (220, 20)),
+            relative_rect=pygame.Rect((panel_x + 15, 336), (320, 18)),
             start_value=sim_speed, value_range=(0.1, 10.0), manager=self.manager
         )
+
         self.btn_scenario = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x + 15, 415), (220, 34)),
+            relative_rect=pygame.Rect((panel_x + 15, 366), (320, 32)),
             text=f"MAP: {scenario_name}", manager=self.manager
         )
         self.btn_random_map = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x + 15, 455), (220, 32)),
+            relative_rect=pygame.Rect((panel_x + 15, 404), (320, 30)),
             text="GENERATE RANDOM MAP", manager=self.manager
         )
         self.btn_save_map = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x + 15, 492), (220, 32)),
+            relative_rect=pygame.Rect((panel_x + 15, 440), (320, 30)),
             text="SAVE MAP JSON", manager=self.manager
         )
         self.btn_run = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x + 15, 540), (220, 44)),
+            relative_rect=pygame.Rect((panel_x + 15, 478), (320, 42)),
             text="START SIMULATION", manager=self.manager
         )
 
         # --- SCHEDULES Tab Widgets ---
         self.input_tid = pygame_gui.elements.UITextEntryLine(
-            relative_rect=pygame.Rect((panel_x + 15, 95), (55, 30)), manager=self.manager
+            relative_rect=pygame.Rect((panel_x + 15, 90), (52, 28)), manager=self.manager
         )
         self.input_tid.set_text("101")
+
         self.input_tcolor = pygame_gui.elements.UITextEntryLine(
-            relative_rect=pygame.Rect((panel_x + 75, 95), (105, 30)), manager=self.manager
+            relative_rect=pygame.Rect((panel_x + 72, 90), (120, 28)), manager=self.manager
         )
         self.input_tcolor.set_text("255 70 70")
+
         self.input_tstart = pygame_gui.elements.UITextEntryLine(
-            relative_rect=pygame.Rect((panel_x + 185, 95), (60, 30)), manager=self.manager
+            relative_rect=pygame.Rect((panel_x + 198, 90), (68, 28)), manager=self.manager
         )
         self.input_tstart.set_text("0")
+
         self.input_tpriority = pygame_gui.elements.UITextEntryLine(
-            relative_rect=pygame.Rect((panel_x + 250, 95), (65, 30)), manager=self.manager
+            relative_rect=pygame.Rect((panel_x + 272, 90), (63, 28)), manager=self.manager
         )
         self.input_tpriority.set_text("2")
 
@@ -121,7 +130,7 @@ class SimulatorUI:
         presets = self.cfg.get_preset_train_colors()
         for i, col in enumerate(presets):
             btn = pygame_gui.elements.UIButton(
-                relative_rect=pygame.Rect((panel_x + 75 + (i * 22), 132), (18, 18)),
+                relative_rect=pygame.Rect((panel_x + 72 + (i * 20), 124), (16, 16)),
                 text="", manager=self.manager
             )
             btn.colours['normal_bg'] = pygame.Color(col)
@@ -130,26 +139,26 @@ class SimulatorUI:
             btn.rebuild()
             self.btn_colors.append((btn, col))
 
-        # Station Selector Dropdown
+        # Station Selector Dropdown & Route Manifest
         self.drop_stops = pygame_gui.elements.UIDropDownMenu(
             options_list=["Select Station"], starting_option="Select Station",
-            relative_rect=pygame.Rect((panel_x + 15, 205), (310, 28)), manager=self.manager
+            relative_rect=pygame.Rect((panel_x + 15, 168), (320, 28)), manager=self.manager
         )
         self.input_troute = pygame_gui.elements.UITextEntryLine(
-            relative_rect=pygame.Rect((panel_x + 15, 240), (310, 30)), manager=self.manager
+            relative_rect=pygame.Rect((panel_x + 15, 222), (320, 28)), manager=self.manager
         )
         self.input_troute.set_text("Cairo Alexandria")
 
         self.btn_add_train = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x + 35, 280), (270, 36)),
+            relative_rect=pygame.Rect((panel_x + 15, 258), (320, 34)),
             text="ADD / UPDATE TRAIN", manager=self.manager
         )
         self.btn_current_trains = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x + 35, 322), (270, 28)),
+            relative_rect=pygame.Rect((panel_x + 15, 298), (155, 28)),
             text="CLEAR SELECTED", manager=self.manager
         )
         self.btn_clear_trains = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect((panel_x + 35, 355), (270, 28)),
+            relative_rect=pygame.Rect((panel_x + 180, 298), (155, 28)),
             text="CLEAR ALL TRAINS", manager=self.manager
         )
 
@@ -173,16 +182,15 @@ class SimulatorUI:
         self.input_y.visible = is_cfg
         if is_cfg:
             self.drop_algo.show()
+            self.slider_speed.show()
         else:
             self.drop_algo.hide()
+            self.slider_speed.hide()
+
         self.btn_scenario.visible = is_cfg
         self.btn_random_map.visible = is_cfg
         self.btn_save_map.visible = is_cfg
         self.btn_run.visible = is_cfg
-        if is_cfg:
-            self.slider_speed.show()
-        else:
-            self.slider_speed.hide()
 
         is_sched = (active_tab == "SCHEDULES")
         self.input_tid.visible = is_sched
@@ -200,18 +208,17 @@ class SimulatorUI:
             self.drop_stops.hide()
 
         for btn, _ in self.btn_colors:
-            if is_sched:
-                btn.show()
-            else:
-                btn.hide()
+            btn.visible = is_sched
 
-    def update_stops_dropdown(self, stations: List[str], active_tab: str) -> None:
-        """Recreates station dropdown selector with updated station names."""
-        rect = self.drop_stops.relative_rect
+    def update_stops_dropdown(self, station_names: List[str], active_tab: str) -> None:
+        """Refreshes the station selector dropdown with active network stations."""
+        opts = ["Select Station"] + sorted(station_names)
+        panel_w = self.cfg.get("window", "panel_width", 350)
+        panel_x = self.width - panel_w
         self.drop_stops.kill()
-        nodes = ["Select Station"] + sorted(stations)
         self.drop_stops = pygame_gui.elements.UIDropDownMenu(
-            options_list=nodes, starting_option="Select Station",
-            relative_rect=rect, manager=self.manager
+            options_list=opts, starting_option="Select Station",
+            relative_rect=pygame.Rect((panel_x + 15, 168), (320, 28)), manager=self.manager
         )
-        self.update_visibility(active_tab)
+        if active_tab != "SCHEDULES":
+            self.drop_stops.hide()

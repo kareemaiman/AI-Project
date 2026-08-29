@@ -100,7 +100,7 @@ def test_deconfliction_schedulers():
     schedulers = [
         ("GREEDY", GreedyScheduler(g, safety_margin=10.0)),
         ("CSP", CSPScheduler(g, safety_margin=10.0)),
-        ("PRIORITY_EDF", PriorityEDFScheduler(g, base_safety_margin=10.0)),
+        ("PRIORITY_EDF", PriorityEDFScheduler(g, safety_margin=10.0)),
         ("DYNAMIC_REROUTE", DynamicRerouteScheduler(g, safety_margin=10.0)),
     ]
 

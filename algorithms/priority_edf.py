@@ -15,9 +15,9 @@ from core.models import RailwayGraph, ScheduleEvent
 class PriorityEDFScheduler(BaseScheduler):
     """Tier-aware priority scheduler minimizing high-priority passenger train delays."""
 
-    def __init__(self, graph: RailwayGraph, base_safety_margin: float = 15.0):
+    def __init__(self, graph: RailwayGraph, safety_margin: float = 15.0):
         """Initializes Priority EDF solver."""
-        super().__init__(graph, base_safety_margin)
+        super().__init__(graph, safety_margin)
 
     def schedule_route(
         self,

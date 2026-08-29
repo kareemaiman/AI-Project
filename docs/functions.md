@@ -1,6 +1,6 @@
 # Smart Rail: Automated API & Function Directory (`functions.md`)
 
-> **Generated on:** 2026-08-30 01:41:10  
+> **Generated on:** 2026-08-30 01:50:47  
 > **Note:** Do not manually edit this file. It is automatically compiled by `scripts/parse_functions.py`.
 
 ---
@@ -167,7 +167,7 @@ Tier-aware priority scheduler minimizing high-priority passenger train delays.
 
 | Method | Signature | Description |
 | :--- | :--- | :--- |
-| `__init__` | `__init__(self, graph: RailwayGraph, base_safety_margin: float)` | Initializes Priority EDF solver. |
+| `__init__` | `__init__(self, graph: RailwayGraph, safety_margin: float)` | Initializes Priority EDF solver. |
 | `schedule_route` | `schedule_route(self, train_id: int, stops: List[str], color: Tuple[int, int, int], start_time: int, priority: int) -> Tuple[List[ScheduleEvent], int, float]` | Schedules train route with tier-adjusted search step and safety buffers. |
 
 ---
@@ -370,23 +370,23 @@ Handles canvas clicks, drag panning, zoom adjustments, and station/track editing
 ---
 
 ## Module: [`ui/ui_views.py`](file:///C:/Users/karee/OneDrive/Desktop/random projects/ai project/ui/ui_views.py)
-**Description:** Smart Rail UI Views & Visual Rendering Pipeline.
+**Description:** Smart Rail UI Views & Presentation Pipeline.
 
-Draws Cartesian background grids, network topology, train animations,
-sidebar tab panels, HUD overlays, and 24-hour spatial-temporal Gantt charts.
+Renders graph networks, moving trains, HUD overlays, tab panels, and
+cached 24-hour spatial-temporal Gantt charts without magic constants.
 
 ### Standalone Functions
 
 | Function | Signature | Description |
 | :--- | :--- | :--- |
-| `draw_map_background` | `draw_map_background(surface: pygame.Surface, width: int, height: int, zoom: float, cam_offset_x: float, cam_offset_y: float, cfg: ConfigManager) -> None` | Draws Cartesian grid aligned with camera pan/zoom offsets. |
-| `draw_map` | `draw_map(surface: pygame.Surface, graph: RailwayGraph, train_agents: Dict[int, TrainAgent], selected_node_for_link: Optional[str], zoom: float, to_screen: Callable[[float, float], Tuple[int, int]], font: pygame.font.Font, cfg: ConfigManager) -> None` | Renders tracks, station nodes, labels, active segments, and train sprites. |
+| `draw_map_background` | `draw_map_background(surface: pygame.Surface, width: int, height: int, zoom: float, cam_x: float, cam_y: float, cfg: ConfigManager) -> None` | Renders the dark Cartesian background grid. |
+| `draw_map` | `draw_map(surface: pygame.Surface, graph: RailwayGraph, train_agents: Dict[int, TrainAgent], selected_node_for_link: Optional[str], zoom: float, to_screen_fn: Callable[[float, float], Tuple[int, int]], font: pygame.font.Font, cfg: ConfigManager) -> None` | Renders track edges, station nodes, and dynamic moving trains. |
 | `draw_tab_config` | `draw_tab_config(surface: pygame.Surface, panel_x: int, header_font: pygame.font.Font, font: pygame.font.Font, status_font: pygame.font.Font, sim_speed: float, feedback_message: str, cfg: ConfigManager) -> None` | Renders the CONFIG tab controls, editor guides, and feedback banners. |
 | `draw_tab_schedules` | `draw_tab_schedules(surface: pygame.Surface, panel_x: int, header_font: pygame.font.Font, font: pygame.font.Font, status_font: pygame.font.Font, train_route_configs: Dict[int, RouteConfig], train_list_rects: List[Tuple[pygame.Rect, int]], selected_train: Optional[int], cfg: ConfigManager) -> None` | Renders the SCHEDULES tab train manifest list, priority tag, and controls. |
-| `draw_tab_stats` | `draw_tab_stats(surface: pygame.Surface, panel_x: int, header_font: pygame.font.Font, font: pygame.font.Font, status_font: pygame.font.Font, total_scheduling_time: float, scheduling_ops: int, total_collisions_avoided: int, train_agents: Dict[int, TrainAgent], screen_height: int, cfg: ConfigManager) -> None` | Renders the STATS live telemetry metrics and individual train journey stats. |
-| `render_gantt_surface` | `render_gantt_surface(graph: RailwayGraph, planned_events: List[ScheduleEvent], status_font: pygame.font.Font, cfg: ConfigManager) -> pygame.Surface` | Builds and caches the static 24-hour spatial-temporal Gantt chart surface. |
-| `draw_tab_table` | `draw_tab_table(surface: pygame.Surface, panel_x: int, header_font: pygame.font.Font, status_font: pygame.font.Font, gantt_surface: Optional[pygame.Surface], table_scroll_y: int, sim_time: int, screen_height: int, cfg: ConfigManager) -> None` | Renders the TABLE tab displaying the spatial-temporal track usage Gantt chart. |
-| `draw_overlay_info` | `draw_overlay_info(surface: pygame.Surface, header_font: pygame.font.Font, sim_time: int, cfg: ConfigManager) -> None` | Renders top-left simulation clock overlay (Day & 24h Time). |
+| `draw_tab_stats` | `draw_tab_stats(surface: pygame.Surface, panel_x: int, header_font: pygame.font.Font, font: pygame.font.Font, status_font: pygame.font.Font, total_time: float, ops: int, conflicts: int, train_agents: Dict[int, TrainAgent], height: int, cfg: ConfigManager) -> None` | Renders the STATS tab computation telemetry, collision avoidance metrics, and train states. |
+| `render_gantt_surface` | `render_gantt_surface(graph: RailwayGraph, events: List[ScheduleEvent], status_font: pygame.font.Font, cfg: ConfigManager) -> pygame.Surface` | Pre-renders the 24-hour spatial-temporal Gantt chart. |
+| `draw_tab_table` | `draw_tab_table(surface: pygame.Surface, panel_x: int, header_font: pygame.font.Font, status_font: pygame.font.Font, table_surface: Optional[pygame.Surface], scroll_y: int, sim_time: int, height: int, cfg: ConfigManager) -> None` | Renders the scrollable Gantt viewport and live time indicator cursor. |
+| `draw_overlay_info` | `draw_overlay_info(surface: pygame.Surface, header_font: pygame.font.Font, sim_time: int, cfg: ConfigManager) -> None` | Renders the top HUD simulation clock. |
 
 ---
 
@@ -406,6 +406,6 @@ Constructs and manages all Pygame-GUI interactive elements in the sidebar.
 | `__init__` | `__init__(self, manager: pygame_gui.UIManager, cfg: ConfigManager, width: int, height: int)` | Initializes UI widgets using settings from ConfigManager. |
 | `setup_ui` | `setup_ui(self, active_tab: str, algorithm_name: str, sim_speed: float, scenario_name: str) -> None` | Constructs and positions all sidebar widgets and inputs. |
 | `update_visibility` | `update_visibility(self, active_tab: str) -> None` | Toggles widget visibility based on active sidebar tab. |
-| `update_stops_dropdown` | `update_stops_dropdown(self, stations: List[str], active_tab: str) -> None` | Recreates station dropdown selector with updated station names. |
+| `update_stops_dropdown` | `update_stops_dropdown(self, station_names: List[str], active_tab: str) -> None` | Refreshes the station selector dropdown with active network stations. |
 
 ---
