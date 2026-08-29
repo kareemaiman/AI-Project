@@ -50,7 +50,7 @@ ai project/
 ├── generators/
 │   └── map_generator.py          # Procedural MST-based random railway graph & fleet generator
 ├── ui/
-│   ├── ui_widgets.py             # Pygame-GUI widget hierarchy, inputs & color selectors
+│   ├── ui_widgets.py             # Responsive Pygame-GUI widget hierarchy & auto-spacing
 │   ├── ui_views.py               # Rendering pipeline (map, grid, HUD, tabs, 24h Gantt chart)
 │   └── event_handler.py          # Mouse canvas interactions (station linking, deleting, panning)
 ├── scripts/

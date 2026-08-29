@@ -14,8 +14,9 @@ venv/
 env/
 .env
 
-# Legacy archive folder
+# Legacy archive & scripts folder
 legacy_archive/
+scripts/
 
 # Editor settings
 .vscode/

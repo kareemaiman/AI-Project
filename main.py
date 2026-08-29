@@ -187,7 +187,7 @@ class App:
 
     def handle_events(self) -> bool:
         """Processes Pygame window, UI widgets, and mouse events."""
-        panel_w = self.cfg.get("window", "panel_width", 350)
+        panel_x, panel_w, _, _ = self.ui.get_layout_metrics()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -296,22 +296,21 @@ class App:
         draw_map_background(self.screen, self.width, self.height, self.zoom, self.cam_offset_x, self.cam_offset_y, self.cfg)
         draw_map(self.screen, self.graph, self.train_agents, self.map_handler.selected_node_for_link, self.zoom, self.to_screen, self.font, self.cfg)
 
-        panel_w = self.cfg.get("window", "panel_width", 350)
-        panel_x = self.width - panel_w
+        panel_x, panel_w, content_w, _ = self.ui.get_layout_metrics()
         pygame.draw.rect(self.screen, self.cfg.get_color("panel"), (panel_x, 0, panel_w, self.height))
         pygame.draw.line(self.screen, self.cfg.get_color("panel_border"), (panel_x, 0), (panel_x, self.height), 2)
 
         if self.active_tab == "CONFIG":
-            draw_tab_config(self.screen, panel_x, self.header_font, self.font, self.status_font, self.engine.sim_speed, self.feedback_message, self.cfg)
+            draw_tab_config(self.screen, panel_x, content_w, self.header_font, self.font, self.status_font, self.engine.sim_speed, self.feedback_message, self.cfg)
         elif self.active_tab == "SCHEDULES":
-            draw_tab_schedules(self.screen, panel_x, self.header_font, self.font, self.status_font, self.train_route_configs, self.train_list_rects, self.selected_train, self.cfg)
+            draw_tab_schedules(self.screen, panel_x, content_w, self.header_font, self.font, self.status_font, self.train_route_configs, self.train_list_rects, self.selected_train, self.cfg)
         elif self.active_tab == "STATS":
-            draw_tab_stats(self.screen, panel_x, self.header_font, self.font, self.status_font, self.engine.total_scheduling_time, self.engine.scheduling_ops, self.engine.total_collisions_avoided, self.train_agents, self.height, self.cfg)
+            draw_tab_stats(self.screen, panel_x, content_w, self.header_font, self.font, self.status_font, self.engine.total_scheduling_time, self.engine.scheduling_ops, self.engine.total_collisions_avoided, self.train_agents, self.height, self.cfg)
         elif self.active_tab == "TABLE":
             if self.table_dirty or self.table_surface is None:
-                self.table_surface = render_gantt_surface(self.graph, self.planned_events, self.status_font, self.cfg)
+                self.table_surface = render_gantt_surface(self.graph, self.planned_events, self.status_font, content_w, self.cfg)
                 self.table_dirty = False
-            draw_tab_table(self.screen, panel_x, self.header_font, self.status_font, self.table_surface, self.table_scroll_y, self.engine.sim_time, self.height, self.cfg)
+            draw_tab_table(self.screen, panel_x, content_w, self.header_font, self.status_font, self.table_surface, self.table_scroll_y, self.engine.sim_time, self.height, self.cfg)
 
         self.ui_manager.draw_ui(self.screen)
         draw_overlay_info(self.screen, self.header_font, self.engine.sim_time, self.cfg)

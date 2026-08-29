@@ -1,5 +1,5 @@
 """
-Comprehensive Unit, Integration, and Regression Test Suite for Smart Rail.
+Comprehensive Unit, Integration, Stress, and Regression Test Suite for Smart Rail.
 """
 
 from algorithms import (
@@ -20,6 +20,9 @@ from core.models import RailwayGraph, RouteConfig
 from core.scenario_manager import ScenarioManager
 from core.simulation_engine import SimulationEngine
 from generators.map_generator import generate_random_map, generate_random_trains
+from ui.ui_widgets import SimulatorUI
+import pygame
+import pygame_gui
 
 
 def test_config_manager():
@@ -70,20 +73,16 @@ def test_pathfinding_algorithms():
     g.add_track("C", "D")
     g.add_track("A", "D")  # Long direct bypass
 
-    # BFS: unweighted shortest hops (A -> D is 1 hop)
     p_bfs = bfs_path(g, "A", "D")
     assert p_bfs == ["A", "D"]
 
-    # DFS: discovers valid path
     p_dfs = dfs_path(g, "A", "D")
     assert len(p_dfs) >= 2
     assert p_dfs[0] == "A" and p_dfs[-1] == "D"
 
-    # Dijkstra: optimal time-weighted path
     p_dijkstra = dijkstra_path(g, "A", "C")
     assert p_dijkstra == ["A", "B", "C"]
 
-    # Floyd-Warshall: all pairs matrix
     dist_mat, next_mat = floyd_warshall_all_pairs(g)
     assert dist_mat[("A", "B")] == 20.0
     p_floyd = reconstruct_floyd_path(next_mat, "A", "C")
@@ -106,12 +105,10 @@ def test_deconfliction_schedulers():
 
     for name, s in schedulers:
         s.reset()
-        # Train 1: Node1 -> Node2 starting at t=0
         e1, c1, _ = s.schedule_route(1, ["Node1", "Node2"], (255, 0, 0), 0, priority=1)
         assert len(e1) == 1
         t1_end = e1[0].end_time
 
-        # Train 2: Node2 -> Node1 starting at t=0 (Conflicting opposite direction)
         e2, c2, _ = s.schedule_route(2, ["Node2", "Node1"], (0, 255, 0), 0, priority=2)
         assert len(e2) == 1
         t2_start = e2[0].start_time
@@ -142,12 +139,10 @@ def test_simulation_engine_lifecycle():
     agents = {}
     planned = []
 
-    # Start simulation
     assert engine.start(trains, agents, planned) is True
     assert len(agents) == len(trains)
     assert len(planned) > 0
 
-    # Step ticks
     for _ in range(100):
         engine.update_tick(agents, trains)
 
@@ -158,6 +153,53 @@ def test_simulation_engine_lifecycle():
     print("[PASS] test_simulation_engine_lifecycle")
 
 
+def test_responsive_ui_metrics():
+    cfg = ConfigManager("data/config.json")
+    pygame.init()
+    resolutions = [(800, 600), (1024, 768), (1280, 720), (1600, 900), (1920, 1080), (2560, 1440)]
+
+    for w, h in resolutions:
+        pygame.display.set_mode((w, h))
+        mgr = pygame_gui.UIManager((w, h))
+        ui = SimulatorUI(mgr, cfg, w, h)
+        panel_x, panel_w, content_w, tab_w = ui.get_layout_metrics()
+
+        assert panel_w >= 320 and panel_w <= 420
+        assert panel_x == w - panel_w
+        assert content_w == panel_w - 30
+        assert tab_w > 0
+    pygame.quit()
+    print("[PASS] test_responsive_ui_metrics (6 arbitrary screen aspect ratios)")
+
+
+def test_multi_algorithm_stress_matrix():
+    cfg = ConfigManager("data/config.json")
+    sm = ScenarioManager("data/maps")
+    scenarios = ["EGYPT", "HUB", "LONDON"]
+    algorithms = ["CSP", "GREEDY", "PRIORITY_EDF", "DYNAMIC_REROUTE"]
+
+    for sc in scenarios:
+        g, trains, _ = sm.load_scenario(sc)
+        for algo in algorithms:
+            engine = SimulationEngine(g, cfg)
+            engine.set_algorithm(algo)
+            agents = {}
+            planned = []
+
+            ok = engine.start(trains, agents, planned)
+            assert ok is True, f"Failed starting {sc} with {algo}"
+
+            # Step 100 ticks stress test
+            for _ in range(100):
+                engine.update_tick(agents, trains)
+
+            assert engine.sim_time == 100
+            engine.reset(agents, planned)
+            assert engine.mode == "EDITOR"
+
+    print("[PASS] test_multi_algorithm_stress_matrix (12 scenario-algorithm matrix combinations)")
+
+
 if __name__ == "__main__":
     test_config_manager()
     test_scenario_manager_and_json_save()
@@ -165,6 +207,8 @@ if __name__ == "__main__":
     test_deconfliction_schedulers()
     test_random_map_generator()
     test_simulation_engine_lifecycle()
+    test_responsive_ui_metrics()
+    test_multi_algorithm_stress_matrix()
     print("=======================================================")
-    print("ALL 6 FORMAL INTEGRATION TEST SUITES PASSED (100%)")
+    print("ALL 8 COMPREHENSIVE TEST SUITES PASSED (100%)")
     print("=======================================================")
